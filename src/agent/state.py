@@ -1,6 +1,8 @@
 """Agent state definition for the LangGraph workflow."""
 
 from typing import TypedDict, Literal, NotRequired
+from typing import Annotated
+import operator
 
 from agent.models import AgentError
 
@@ -38,10 +40,9 @@ class AgentState(TypedDict, total=False):
 
     # --- QA ---
     question: str | None
-    messages: list[dict]
     retrieved: list[dict]
 
     # --- control ---
-    errors: list[dict]
-    retries: dict[str, int]
-    warnings: list[str]
+    errors: Annotated[list[dict], operator.add]
+    warnings: Annotated[list[str], operator.add]
+    messages: Annotated[list[dict], operator.add]

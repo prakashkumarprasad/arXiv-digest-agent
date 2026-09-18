@@ -275,6 +275,8 @@ Implementation notes:
 6. Return `QAAnswer{answer, citations:[{chunk_id, section, page, snippet}], grounded: bool}`.
 7. Append the Q and A to `state["messages"]` and checkpoint.
 
+**Citation numbering — required implementation detail:** `prompts.qa_prompt()` labels context blocks `[S1]`, `[S2]`, ... purely by their position in the list passed to it. That numbering has no inherent link back to a chunk's real `chunk_id` in the vector store. `qa_node` MUST build and keep an explicit `{"S1": chunk_id, "S2": chunk_id, ...}` mapping at retrieval time (same order used to build `qa_prompt`'s `context_blocks`), and use that mapping for step 5's post-check and step 6's `citations` list. Without this mapping, "every `[Sn]` cited must exist in the retrieved set" is unverifiable — there's nothing to check `[Sn]` against.
+
 ---
 
 ## 6. Exact interfaces (contract — do not deviate)

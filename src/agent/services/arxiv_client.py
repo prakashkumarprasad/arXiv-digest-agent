@@ -3,7 +3,6 @@
 import logging
 import time
 from typing import Any
-from agent.models import PaperMeta
 import re
 
 import arxiv
@@ -72,22 +71,22 @@ class ArxivClient:
         raw = entry_id.split("/")[-1]
         return re.sub(r"v\d+$", "", raw)
     
-    def _paper_to_dict(self, paper: arxiv.Result) -> PaperMeta:
-        return PaperMeta(
-            arxiv_id=self._extract_arxiv_id(paper.entry_id),
-            title=paper.title,
-            authors=[author.name for author in paper.authors],
-            summary=paper.summary,
-            published=paper.published.isoformat() if paper.published else "",
-            updated=paper.updated.isoformat() if paper.updated else "",
-            categories=paper.categories,
-            primary_category=paper.primary_category,
-            pdf_url=paper.pdf_url,
-            entry_id=paper.entry_id,
-            journal_ref=paper.journal_ref,
-            doi=paper.doi,
-            comment=paper.comment,
-        )
+    def _paper_to_dict(self, paper: arxiv.Result) -> dict:
+        return {
+            "arxiv_id": self._extract_arxiv_id(paper.entry_id),
+            "title": paper.title,
+            "authors": [author.name for author in paper.authors],
+            "summary": paper.summary,
+            "published": paper.published.isoformat() if paper.published else "",
+            "updated": paper.updated.isoformat() if paper.updated else "",
+            "categories": paper.categories,
+            "primary_category": paper.primary_category,
+            "pdf_url": str(paper.pdf_url),
+            "entry_id": str(paper.entry_id),
+            "journal_ref": paper.journal_ref,
+            "doi": paper.doi,
+            "comment": paper.comment,
+        }
 
     def build_search_query(
         self,

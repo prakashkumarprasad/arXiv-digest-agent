@@ -30,6 +30,10 @@ def chunk_embed(state: AgentState) -> dict[str, Any]:
     if not paper:
         return {"n_chunks": 0, "collection": None, "errors": [{"code": "NO_PAPER", "node": "chunk_embed", "detail": "No paper in state", "recoverable": False}]}
 
+    # Handle both dict and Pydantic model
+    if hasattr(paper, 'model_dump'):
+        paper = paper.model_dump()
+
     arxiv_id = paper.get("arxiv_id")
     if not arxiv_id:
         return {"n_chunks": 0, "collection": None, "errors": [{"code": "NO_ARXIV_ID", "node": "chunk_embed", "detail": "Paper missing arxiv_id", "recoverable": False}]}

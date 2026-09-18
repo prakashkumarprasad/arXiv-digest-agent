@@ -21,6 +21,10 @@ def fetch_pdf(state: AgentState) -> dict[str, Any]:
     if not paper:
         return {"pdf_path": None, "errors": [{"code": "NO_PAPER", "node": "fetch_pdf", "detail": "No paper selected", "recoverable": False}]}
 
+    # Handle both dict and Pydantic model
+    if hasattr(paper, 'model_dump'):
+        paper = paper.model_dump()
+
     arxiv_id = paper.get("arxiv_id")
     pdf_url = paper.get("pdf_url")
 
@@ -78,6 +82,10 @@ def parse(state: AgentState) -> dict[str, Any]:
 
     if not pdf_path:
         return {"parse_mode": "failed", "errors": [{"code": "NO_PDF_PATH", "node": "parse", "detail": "No PDF path provided", "recoverable": False}]}
+
+    # Handle both dict and Pydantic model
+    if paper and hasattr(paper, 'model_dump'):
+        paper = paper.model_dump()
 
     arxiv_id = paper.get("arxiv_id", "") if paper else ""
     arxiv_abstract = paper.get("summary", "") if paper else ""

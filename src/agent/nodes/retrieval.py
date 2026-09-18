@@ -1,8 +1,10 @@
-"""Retrieval nodes: search_arxiv and broaden_query."""
+"""Retrieval nodes: search_arxiv, broaden_query, and fetch_metadata."""
 
 import logging
+import re
 from typing import Any
 
+import arxiv
 from agent.config import get_settings
 from agent.services.arxiv_client import get_arxiv_client
 from agent.state import AgentState
@@ -140,7 +142,9 @@ def fetch_metadata(state: AgentState) -> dict[str, Any]:
     try:
         paper = client.fetch_metadata(arxiv_id)
         if paper:
-            return {"paper": paper, "candidates": [paper]}
+            # Convert Pydantic model to dict for state serialization
+            paper_dict = paper.model_dump() if hasattr(paper, 'model_dump') else paper
+            return {"paper": paper_dict, "candidates": [paper_dict]}
         else:
             return {"paper": None, "candidates": [], "errors": [{"code": "ARXIV_ID_NOT_FOUND", "node": "fetch_metadata", "detail": f"Paper {arxiv_id} not found", "recoverable": False}]}
     except Exception as e:
@@ -154,6 +158,3 @@ def fetch_metadata(state: AgentState) -> dict[str, Any]:
         return {"paper": None, "candidates": [], "errors": [error]}
 
 
-# Need to import arxiv for SortCriterion
-import arxiv
-import re
