@@ -167,10 +167,15 @@ def digest(
     config = {"configurable": {"thread_id": thread_id}}
 
     with get_persistent_graph() as graph:
-        n_errs = len(graph.get_state(config).values.get("errors", []))
+        before = graph.get_state(config).values
+        n_errs = len(before.get("errors", []))
+        n_warns = len(before.get("warnings", []))
         # `question` persists in the checkpoint and `_route_mode` sends any truthy
         # question to qa_node, so a re-digest must reset it or it silently skips the digest.
         values = _run(graph, {"raw_input": raw_input, "question": None, "retries": {}}, config)
+
+    for w in values.get("warnings", [])[n_warns:]:
+        console.print(f"[yellow]Warning: {escape(w)}[/yellow]")
 
     briefing = values.get("briefing")
     if not briefing:
