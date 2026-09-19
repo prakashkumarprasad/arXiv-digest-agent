@@ -222,6 +222,7 @@ def get_graph() -> StateGraph:
     return build_graph()
 
 
+@contextmanager
 def get_persistent_graph():
     """Get the compiled graph with SqliteSaver checkpointer for persistent sessions.
 
@@ -229,4 +230,6 @@ def get_persistent_graph():
         with get_persistent_graph() as graph:
             result = graph.invoke(...)
     """
-    return _sqlite_checkpointer_context()
+    settings = get_settings()
+    with SqliteSaver.from_conn_string(str(settings.sqlite_db_path)) as checkpointer:
+        yield build_graph(checkpointer=checkpointer)
