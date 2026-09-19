@@ -39,7 +39,24 @@ Rules:
 - Be concise but complete
 - If you cite a source, the citation number MUST exist in the provided context
 
-Return JSON with fields: answer (str), citations (list of dicts with chunk_id, section, page, snippet), grounded (bool)"""
+Return ONLY valid JSON with EXACTLY this structure (no extra fields, no markdown):
+
+{
+  "answer": "your answer text here",
+  "citations": [
+    {"chunk_id": "S1", "section": "section name", "text": "relevant snippet from context"},
+    {"chunk_id": "S2", "section": "section name", "text": "relevant snippet from context"}
+  ],
+  "grounded": true
+
+}
+
+Rules for citations:
+- chunk_id: use the citation reference like "S1", "S2", etc. from the context blocks
+- section: the section name from the context block
+- text: a relevant snippet from the context block (max 200 chars)
+- Only include citations for claims you make in your answer
+- grounded: true if you can answer from context, false if context is insufficient"""
 
 SYSTEM_QUERY_REWRITE = """Rewrite the user's question to be self-contained by resolving pronouns and references using the conversation history.
 

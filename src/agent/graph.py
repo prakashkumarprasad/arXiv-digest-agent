@@ -17,12 +17,36 @@ from agent.nodes.fetch_parse import fetch_pdf, parse, degrade_mode
 from agent.nodes.indexing import chunk_embed
 from agent.nodes.selection import select_paper
 from agent.nodes.summarize import summarize
-# QA node will be added in later stages
-# from agent.nodes.qa import qa_node
+from agent.nodes.qa import qa_node
 
 
-# Global checkpointer instance (for SqliteSaver)
+def _start(state: AgentState) -> dict:
+    """Entry pass-through node.
+
+    Returns no keys on purpose. A node's return value is applied as a state
+    update, so echoing the full state (e.g. ``lambda state: state``) makes the
+    ``operator.add`` reducers on ``messages``/``errors``/``warnings`` re-append
+    the checkpointed lists on every invoke, duplicating history.
+
+    Args:
+        state: Current graph state (unused).
+
+    Returns:
+        An empty dict (no state changes).
+    """
+    return {}
+
+
+def _route_mode(state: AgentState) -> str:
+    """Route based on input mode: 'raw_input' -> digest, 'question' -> QA."""
+    if state.get("question"):
+        return "qa_node"
+    return "query_understanding"
+
+
+# Global checkpointer instances
 _sqlite_checkpointer = None
+_memory_checkpointer = None
 
 
 @contextmanager
@@ -34,6 +58,14 @@ def _sqlite_checkpointer_context():
         _sqlite_checkpointer = SqliteSaver.from_conn_string(str(settings.sqlite_db_path))
         _sqlite_checkpointer = _sqlite_checkpointer.__enter__()
     yield _sqlite_checkpointer
+
+
+def _get_memory_checkpointer():
+    """Get or create the shared InMemorySaver checkpointer."""
+    global _memory_checkpointer
+    if _memory_checkpointer is None:
+        _memory_checkpointer = InMemorySaver()
+    return _memory_checkpointer
 
 
 def _route_intent(state: AgentState) -> str:
@@ -82,18 +114,19 @@ def build_graph(checkpointer=None) -> StateGraph:
     """Build and compile the LangGraph workflow.
 
     Args:
-        checkpointer: Optional checkpointer. If None, uses InMemorySaver for testing.
+        checkpointer: Optional checkpointer. If None, uses shared InMemorySaver for testing.
                      Pass a SqliteSaver context manager for persistence.
 
     Returns a compiled graph.
     thread_id = arxiv_id so QA re-attaches to previous session without re-parsing.
     """
     if checkpointer is None:
-        checkpointer = InMemorySaver()
+        checkpointer = _get_memory_checkpointer()
 
     workflow = StateGraph(AgentState)
 
     # Add all nodes
+    workflow.add_node("start", _start)  # Pass-through entry node; must return {}
     workflow.add_node("query_understanding", query_understanding)
     workflow.add_node("fetch_metadata", fetch_metadata)
     workflow.add_node("search_arxiv", search_arxiv)
@@ -104,10 +137,20 @@ def build_graph(checkpointer=None) -> StateGraph:
     workflow.add_node("degrade_mode", degrade_mode)
     workflow.add_node("chunk_embed", chunk_embed)
     workflow.add_node("summarize", summarize)
-    # workflow.add_node("qa_node", qa_node)  # Stage 7
+    workflow.add_node("qa_node", qa_node)
 
-    # Set entry point
-    workflow.set_entry_point("query_understanding")
+    # Set entry point to router
+    workflow.set_entry_point("start")
+
+    # Route to digest or QA based on input
+    workflow.add_conditional_edges(
+        "start",
+        _route_mode,
+        {
+            "query_understanding": "query_understanding",
+            "qa_node": "qa_node",
+        },
+    )
 
     # Intent routing
     workflow.add_conditional_edges(
@@ -165,8 +208,11 @@ def build_graph(checkpointer=None) -> StateGraph:
     # chunk_embed -> summarize
     workflow.add_edge("chunk_embed", "summarize")
 
-    # summarize -> END
+    # summarize -> END (for digest command)
     workflow.add_edge("summarize", END)
+
+    # qa_node -> END (for ask command)
+    workflow.add_edge("qa_node", END)
 
     return workflow.compile(checkpointer=checkpointer)
 

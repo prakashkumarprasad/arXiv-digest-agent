@@ -1,0 +1,63 @@
+{
+  "arxiv_id": "1706.03762",
+  "title": "Attention Is All You Need",
+  "authors": [
+    "Ashish Vaswani",
+    "Noam Shazeer",
+    "Niki Parmar",
+    "Jakob Uszkoreit",
+    "Llion Jones",
+    "Aidan N. Gomez",
+    "Lukasz Kaiser",
+    "Illia Polosukhin"
+  ],
+  "published": "2017-06-12T17:57:34Z",
+  "categories": [
+    "cs.CL",
+    "cs.LG"
+  ],
+  "url": "https://arxiv.org/abs/1706.03762",
+  "pdf_url": "https://arxiv.org/pdf/1706.03762v7",
+  "why_it_matters": "The paper introduces the Transformer model, which significantly improves the efficiency and performance of sequence modeling tasks, particularly in machine translation. It achieves state-of-the-art results on the WMT 2014 English-to-German and English-to-French translation tasks, outperforming previous models and ensembles. The model's ability to parallelize training and its reliance on attention mechanisms enable faster training times and better performance.",
+  "problem_statement": "The paper addresses the limitations of recurrent neural networks (RNNs) in sequence modeling, such as sequential processing and lack of parallelization, by proposing the Transformer model.",
+  "method": [
+    "The Transformer model eschews recurrence and relies entirely on an attention mechanism to draw global dependencies between input and output.",
+    "The model is more parallelizable and requires significantly less time to train compared to RNNs and convolutional neural networks.",
+    "The paper demonstrates the effectiveness of the Transformer model on the WMT 2014 translation tasks, achieving new state-of-the-art results.",
+    "The model was trained on the Wall Street Journal portion of the Penn Treebank and in a semi-supervised setting using larger corpora."
+  ],
+  "key_results": [
+    {
+      "claim": "The Transformer model achieved a new state-of-the-art BLEU score of 28.4 on the WMT 2014 English-to-German translation task.",
+      "evidence": "Table 1",
+      "source_section": "Results"
+    },
+    {
+      "claim": "The big model outperformed all previously published models and ensembles on the WMT 2014 English-to-French translation task with a BLEU score of 41.0.",
+      "evidence": "Figure 2",
+      "source_section": "Results"
+    },
+    {
+      "claim": "Training the big model for English-to-French took less than 1/4 of the training cost of the previous state-of-the-art model.",
+      "evidence": "Not explicitly stated by the authors; reviewer-inferred: Training cost comparison",
+      "source_section": "Results"
+    }
+  ],
+  "limitations": [
+    "Not explicitly stated by the authors; reviewer-inferred: The model's performance may degrade with longer sequences or more complex tasks without further modifications or enhancements."
+  ],
+  "followup_questions": [
+    "How does the Transformer model's performance compare to other state-of-the-art models on longer sequence tasks or more complex datasets?",
+    "Can the Transformer model's architecture be further optimized to handle even longer sequences or more complex tasks?",
+    "What are the potential trade-offs between the parallelizability of the Transformer model and its memory requirements?",
+    "How can the attention mechanism be further refined to improve the model's performance on specific types of sequence modeling tasks?",
+    "What are the implications of the model's reliance on attention mechanisms for its interpretability and explainability?"
+  ],
+  "meta": {
+    "model": "ollama",
+    "parse_mode": "full",
+    "n_chunks": 28,
+    "warnings": [],
+    "generated_at": "2026-09-19T15:56:19.563405Z"
+  }
+}

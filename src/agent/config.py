@@ -48,7 +48,15 @@ class Settings:
     chunk_overlap_tokens: int = field(default_factory=lambda: int(os.getenv("CHUNK_OVERLAP_TOKENS", "80")))
 
     # QA
+    # Deprecated: similarity-based gate. bge-small scores are compressed, so a
+    # 0.35 similarity floor never fires. Kept only so old .env files still load;
+    # qa_node no longer reads it. Use abstain_max_distance instead.
     abstain_threshold: float = field(default_factory=lambda: float(os.getenv("ABSTAIN_THRESHOLD", "0.35")))
+    # Abstain when the best retrieved chunk's raw cosine distance exceeds this.
+    # Calibrated on two papers (2401.12345, 1706.03762): worst in-paper best
+    # distance 0.413, best off-topic distance 0.488 -> midpoint ~0.45. Re-check
+    # with scripts/check_abstain.py before changing.
+    abstain_max_distance: float = field(default_factory=lambda: float(os.getenv("ABSTAIN_MAX_DISTANCE", "0.45")))
     qa_top_k: int = field(default_factory=lambda: int(os.getenv("QA_TOP_K", "6")))
     qa_mmr_lambda: float = field(default_factory=lambda: float(os.getenv("QA_MMR_LAMBDA", "0.6")))
 

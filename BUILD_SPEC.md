@@ -7,7 +7,8 @@
 
 ## 0.1 Standard stage-launch prompt (use verbatim, every stage)
 
-Copy this whole block into opencode, replacing only `<N>`:
+Copy this whole block into opencode, replacing only `<N>` (a stage number such as `7`,
+or a sub-stage such as `8a`):
 
 ```
 Read BUILD_SPEC.md in full, including §0 (ground rules), §6 (exact interfaces),
@@ -16,9 +17,12 @@ prior stages). §11 exists because earlier stages hit real bugs that are not
 obvious from the spec alone — read it before writing any code so you don't
 reintroduce a bug already fixed once, or ignore a constraint already learned.
 
-Implement STAGE <N> only, from the table in §9.
+Implement STAGE <N> only, from the table in §9 (for Stage 8, that includes the
+"Stage 8 sub-stage details" directly below the table — requirements and acceptance
+criteria live there).
 
-Touch only the files listed for STAGE <N>. Do not modify any other file.
+Touch only the files listed for STAGE <N>. Do not modify any other file. The one
+standing exception is BUILD_SPEC.md, and only for §6 additions and §11 entries.
 
 Every function, method, and class you write for this stage MUST match its signature
 in §6 "Exact interfaces" exactly — same name, same parameter names, same return type
@@ -40,10 +44,16 @@ Before declaring this stage complete, you must:
 6. If you hit and fixed a real bug, or made a deliberate design tradeoff, during
    this stage, append an entry to §11 yourself, following the existing format —
    don't leave it only in your own summary.
+7. Run `git status --short` and `git diff --stat` and paste the real output. Every
+   changed file must be on this stage's file list (or be BUILD_SPEC.md §6/§11). If
+   any other file changed, revert it or explain exactly why before declaring done.
 
-Do not say "complete" or "acceptance criteria pass" until steps 1-4 are done and
-their real output is shown. If a check fails, fix it and re-run it — do not move on
-and do not summarize a fix as done without re-running the check.
+Do not say "complete" or "acceptance criteria pass" until steps 1-4 and 7 are done
+and their real output is shown. If a check fails, fix it and re-run it — do not move
+on and do not summarize a fix as done without re-running the check.
+
+If you find a bug in a file that is NOT on this stage's list, do not fix it: append a
+§11 entry starting with `Not fixed —` and mention it in your summary.
 
 Stop after this stage. Do not start the next stage without being asked.
 ```
@@ -68,7 +78,7 @@ Stop after this stage. Do not start the next stage without being asked.
 | Concern | Choice | Why |
 |---|---|---|
 | Orchestration | **LangGraph** (`langgraph`) | Explicit nodes/edges/shared state + built-in checkpointer, which is exactly what the rubric asks for |
-| LLM | **Groq free tier** (`llama-3.3-70b-versatile`), pluggable | Fast, free, generous limits |
+| LLM | **Groq free tier** (`openai/gpt-oss-120b`; the originally specified `llama-3.3-70b-versatile` was deprecated — see §11 Stage 4), pluggable | Fast, free, generous limits |
 | LLM fallback | **Google AI Studio (Gemini free)** and **Ollama** (`qwen2.5:7b-instruct`) | Grader can run with zero keys via Ollama |
 | Embeddings | **`BAAI/bge-small-en-v1.5`** via `sentence-transformers`, local | No API key, 512-token window, 384-dim, CPU-fast |
 | Vector DB | **ChromaDB**, persistent local (`./.data/chroma`) | Local, zero setup, survives process restart |
@@ -118,12 +128,16 @@ arxiv-digest-agent/
 │       ├── vectorstore.py
 │       ├── llm.py            # provider abstraction + JSON repair
 │       └── prompts.py        # all prompt templates, one place
+├── scripts/                  # S7 acceptance/calibration scripts, moved here in Stage 8e
 └── tests/
+    ├── conftest.py
     ├── test_query_understanding.py
     ├── test_chunker.py
     ├── test_parser_fallback.py
     ├── test_selection_zero_results.py
-    └── test_qa_abstain.py
+    ├── test_qa_abstain.py
+    ├── test_multiturn_history.py
+    └── test_citations.py
 ```
 
 ---
@@ -275,13 +289,13 @@ Implementation notes:
 * Write `examples/briefing_<id>.json` and print Markdown via Rich.
 
 ### 5.9 `qa_node` (grounding — 25% of the grade)
-1. **Query rewrite** if `len(messages) > 0`: rewrite pronouns using the last 2 turns ("does it scale?" → "does the proposed KV-cache compression method scale?").
+1. **Query rewrite** if `len(messages) > 0` **and the question is a follow-up** (≤5 words, or contains a reference word such as it/they/that): rewrite pronouns using the last 2 turns ("does it scale?" → "does the proposed KV-cache compression method scale?"). Standalone questions are used verbatim so the rewrite cannot pull earlier topics into an off-topic question (§11 Stage 7).
 2. **Retrieve** top 20 → **MMR rerank** (λ=0.6) → keep 6.
-3. **Abstain gate:** if `max_similarity < ABSTAIN_THRESHOLD` (default 0.35 cosine, configurable) → return the canned "That isn't covered in this paper" answer *without calling the LLM*.
+3. **Abstain gate:** if the **best raw cosine distance** among the retrieved top-20 exceeds `ABSTAIN_MAX_DISTANCE` (default 0.45, env-configurable) → return the canned "That isn't covered in this paper." answer *without calling the LLM*. The gate runs on the (possibly rewritten) query, before MMR. The original similarity gate (`max_similarity < ABSTAIN_THRESHOLD`, 0.35) never fired on bge-small and is deprecated — see §11 Stage 7.
 4. **Answer prompt rules:** answer *only* from the numbered context blocks; cite as `[S1]`, `[S2]`; if the context is insufficient, say so explicitly; never use outside knowledge.
-5. **Post-check:** every `[Sn]` cited must exist in the retrieved set; strip invalid ones and flag.
+5. **Post-check:** every `[Sn]` cited must exist in the retrieved set; strip invalid ones and flag. If no valid citation remains, return the canned abstain message instead of the LLM answer (unless the LLM call itself failed, in which case return the explicit failure message).
 6. Return `QAAnswer{answer, citations:[{chunk_id, section, page, snippet}], grounded: bool}`.
-7. Append the Q and A to `state["messages"]` and checkpoint.
+7. Append the Q and A to `state["messages"]` and checkpoint. **Return ONLY the new Q/A pair** — `messages` has an `operator.add` reducer, so returning the existing history duplicates it (§11 Stage 7).
 
 **Citation numbering — required implementation detail:** `prompts.qa_prompt()` labels context blocks `[S1]`, `[S2]`, ... purely by their position in the list passed to it. That numbering has no inherent link back to a chunk's real `chunk_id` in the vector store. `qa_node` MUST build and keep an explicit `{"S1": chunk_id, "S2": chunk_id, ...}` mapping at retrieval time (same order used to build `qa_prompt`'s `context_blocks`), and use that mapping for step 5's post-check and step 6's `citations` list. Without this mapping, "every `[Sn]` cited must exist in the retrieved set" is unverifiable — there's nothing to check `[Sn]` against.
 
@@ -417,7 +431,127 @@ Global flags: `--provider {groq,gemini,ollama}`, `--model`, `--top-k`, `--verbos
 | **S5 Graph wiring** | `graph.py`, `nodes/query_understanding.py`, `nodes/selection.py` | `build_graph().get_graph().draw_mermaid()` renders; ID input and topic input both route correctly; zero-result path terminates cleanly |
 | **S6 Summarize** | `nodes/summarize.py` | Valid `Briefing` JSON for 3 different papers; `limitations` never empty |
 | **S7 QA** | `nodes/qa.py` | 3 in-paper questions answered with citations; 1 out-of-paper question ("what does this say about the 2026 World Cup?") returns the abstain message |
-| **S8 CLI + polish** | `cli.py`, tests, `docs/architecture.md` | `make demo` runs end to end; `pytest` green; README example pasted from a real run |
+| **S8** | *split into 8a–8e below; run them in order, one session each* | The original S8 acceptance (`make demo` runs end to end; `pytest` green; README example pasted from a real run) is the union of 8a–8e |
+| **S8a Persistent sessions + CLI** | `src/agent/graph.py`, `src/agent/cli.py` | See "Stage 8 sub-stage details" → 8a |
+| **S8b Focused tests** | `tests/*` (+ `pyproject.toml` pytest config only) | See details → 8b |
+| **S8c Architecture doc + real examples** | `docs/architecture.md`, `examples/briefing_2401_12345.json`, `examples/sample_session.md` | See details → 8c |
+| **S8d README + Makefile demo** | `README.md`, `Makefile` | See details → 8d |
+| **S8e Hygiene + final verification** | `.gitattributes`, `.gitignore`, `.env.example`, `scripts/*`, `README.md` (demo link line only) | See details → 8e |
+
+
+### Stage 8 sub-stage details
+
+S8 is split because one session is too big for this agent (see the overreach history in
+§11 and the workflow rules in PROJECT_CONTEXT.md). Use the §0.1 prompt with `<N>` = `8a`,
+`8b`, … . Do not start the next sub-stage without being asked. **No sub-stage may change
+files outside its list; a bug found elsewhere is logged in §11 as `Not fixed —`.**
+
+#### 8a — Persistent sessions + CLI
+Files: `src/agent/graph.py`, `src/agent/cli.py` (create if missing, otherwise complete). No
+node, prompt, service, or config changes.
+
+Requirements:
+1. `get_persistent_graph()` must yield a **compiled graph** built with
+   `build_graph(checkpointer=<SqliteSaver>)`, so `with get_persistent_graph() as graph:
+   graph.invoke(...)` works (today it yields the raw saver — §11 Stage 7).
+2. `cli.py` implements §6c: `digest`, `ask`, `sessions`, and the flags `--auto`,
+   `--json-out`, `--no-qa`, `--provider`, `--model`, `--top-k`, `--verbose` (prints node
+   transitions using `graph.stream(..., stream_mode="updates")`). `digest` and `ask` MUST
+   use `get_persistent_graph()`.
+3. Thread IDs: `thread_id` = the arXiv ID when the input contains one. For topic searches
+   the ID is unknown until selection, so use `thread_id` = `topic:<slug of the input>`.
+   `digest` prints the thread id when finished so the user can run `ask <thread_id> "..."`.
+   `sessions` lists every distinct thread_id in the checkpointer. Do not guess the
+   SqliteSaver API: use `saver.list(None)` if the installed version has it, otherwise write
+   the smallest adapter with a TODO (§0 rule 6).
+4. **Stale-`question` pitfall:** `question` has no reducer, so it persists in the
+   checkpoint, and `_route_mode` routes to `qa_node` whenever `question` is truthy. Every
+   `digest` invoke MUST pass `"question": None` together with `raw_input`; otherwise
+   re-digesting a session that already had QA turns silently skips the digest.
+5. `ask` on an unknown thread fails cleanly: one actionable line ("No saved session for X —
+   run `digest` first"), non-zero exit code, no traceback (check `graph.get_state(config)`).
+6. QA REPL (unless `--no-qa`): read questions until blank / `exit` / `quit`; one
+   `graph.invoke({"question": q}, config)` per turn; print the answer plus citations
+   (`[section, p.X]`). It must never re-run the digest.
+
+Acceptance (run for real, paste unedited output):
+- a. `python -m agent.cli digest 2401.12345 --auto --no-qa --json-out .data/briefing_check.json` completes and prints the briefing.
+- b. In a NEW process: `python -m agent.cli ask 2401.12345 "What datasets did they evaluate on?" --verbose` returns an answer with citations, and the node transitions show only `start` and `qa_node` (no `fetch_pdf`, `parse`, `chunk_embed`, `summarize`).
+- c. In another NEW process, a second `ask` (a follow-up) works; a one-off command reading `graph.get_state(config).values["messages"]` shows 2 messages after the first ask and 4 after the second, each Q/A exactly once.
+- d. `python -m agent.cli sessions` lists `2401.12345`.
+- e. `python -m agent.cli ask 9999.99999 "x"` prints the clean message, exits non-zero, and shows no traceback.
+- f. Re-running `python -m agent.cli digest 2401.12345 --auto --no-qa` AFTER (c) still performs the digest (does not jump into QA).
+- g. `python -c "import agent"` succeeds.
+
+#### 8b — Focused tests
+Files: `tests/*` including `tests/conftest.py`; `pyproject.toml` only to add
+`[tool.pytest.ini_options]` (e.g. `pythonpath`, `testpaths`) if missing. **No `src/` changes.**
+
+Rules: no network, no real LLM calls, no embedding-model downloads in unit tests
+(monkeypatch `complete_json` / `complete_text` / `query_chunks` / `ArxivClient`). Tests must
+not touch the real `.data/`: `Settings` caches and creates directories, so point
+`CHROMA_PERSIST_DIR`, `SQLITE_DB_PATH`, `PDF_CACHE_DIR` at `tmp_path` via `monkeypatch.setenv`
+and call `reset_settings()`. Whole suite under ~30 s.
+
+Tests:
+1. `test_query_understanding.py` — new-style ID, ID with `vN` (suffix stripped), `arxiv.org/abs` URL, `arxiv.org/pdf` URL, old-style ID → `paper_lookup` with the right id; free text → `topic_search`; LLM failure falls back to the raw string with no exception.
+2. `test_chunker.py` — no chunk crosses a section boundary; consecutive chunks inside a section overlap; ids are `arxiv_id:index`; re-chunking gives identical ids.
+3. `test_parser_fallback.py` — a corrupt/garbage PDF written to `tmp_path` → `parse_pdf` returns `degraded_abstract_only`, `full_text` seeded from the abstract fallback, no exception.
+4. `test_selection_zero_results.py` — search returns `[]` → `broaden_query` runs at most twice → run ends cleanly with an actionable message and the queries tried, no exception; a successful broaden routes straight to `select_paper` (regression for §11 Stage 5).
+5. `test_qa_abstain.py` — best distance above `abstain_max_distance` → canned message, `citations == []`, and the LLM is NOT called; in-range distance → LLM is called; an LLM answer with no valid citations → canned message.
+6. `test_multiturn_history.py` — with stubbed retrieval and LLM, three turns through the compiled graph give message counts 2, 4, 6 with each Q/A exactly once; `_start` returns `{}` (regression for §11 Stage 7).
+7. `test_citations.py` — the `[Sn]`→`chunk_id` mapping keeps the prompt's context order; an unknown `Sn` is dropped; final citation objects contain `chunk_id`, `section`, `page`, `snippet`.
+
+Acceptance:
+- `pytest -q` is green with ≥12 tests, including ≥3 failure-path tests (broken PDF, zero results, abstain). Paste the full output.
+- Run `pytest -q` a second time; it still passes (no state leaks through `.data/`).
+- `git status --short` shows changes only under `tests/` (and the pytest config in `pyproject.toml`).
+- `python -c "import agent"` succeeds.
+- If a test exposes a real bug in `src/`, do NOT fix it here: mark the test `xfail` with a reason, add a §11 `Not fixed —` entry, and report it.
+
+#### 8c — Architecture doc + real examples
+Files: `docs/architecture.md`, `examples/briefing_2401_12345.json`,
+`examples/sample_session.md`. No code changes. Requires 8a to be done.
+
+Requirements:
+1. `docs/architecture.md` contains, in order: (a) the Mermaid graph pasted verbatim from `python -c "from agent.graph import build_graph; print(build_graph().get_graph().draw_mermaid())"`; (b) a state table listing every `AgentState` field, its type, which node writes it, and which fields have `operator.add` reducers; (c) "How state persists": `thread_id` choice (incl. the `topic:<slug>` case), the SqliteSaver at `.data/sessions.sqlite`, Chroma at `.data/chroma`, and what a re-attached `ask` does and does not re-run; (d) a failure-paths table (zero results → broaden, parse quality gate → degrade_mode, JSON repair loop, abstain gate, no-valid-citation abstain, LLM provider failure) with the state key/error code that records each. Describe only behavior verified in a real run; say "not verified" otherwise.
+2. `examples/briefing_2401_12345.json` regenerated from a real `digest 2401.12345 --auto --no-qa` run.
+3. `examples/sample_session.md` is a real, unedited transcript (ANSI codes stripped): the digest run; an in-paper `ask` with citations; a pronoun follow-up `ask`; the off-topic question returning `That isn't covered in this paper.`; and `sessions`.
+
+Acceptance:
+- Re-run the Mermaid command and show it is identical to the block in `docs/architecture.md`.
+- `Briefing.model_validate_json(open("examples/briefing_2401_12345.json").read())` succeeds, `meta` is populated, `limitations` is non-empty.
+- `examples/sample_session.md` contains the exact abstain line; paste the terminal output of the run it came from.
+- `git status --short` shows only the three files above (plus BUILD_SPEC.md §11).
+
+#### 8d — README + Makefile demo
+Files: `README.md`, `Makefile`. No code changes.
+
+Requirements:
+1. README sections (§10 checklist): architecture (link `docs/architecture.md`), state table (short), setup for both provider paths (`LLM_PROVIDER=groq` + key, and Ollama), example run pasted from `examples/sample_session.md`, rate-limit/model note (`openai/gpt-oss-120b`, provider model names change), **Design Decisions & Tradeoffs**, known limitations, "what I'd do next".
+2. Design Decisions & Tradeoffs must cover at least: LangGraph checkpointer + `thread_id`; section-aware chunking at 400/80 tokens vs the 512-token bge window; local embeddings; PDF fallback chain and duplicate-block dedupe; the distance-based abstain gate and why the similarity gate failed; rewrite-only-for-follow-ups; the list-reducer rule; `topic:<slug>` thread ids; Gemini left unverified.
+3. Known limitations must be drawn from §11 (unreliable citation `section`/`page` on the pdfplumber path, briefing `evidence` drift, abstain threshold calibrated on N papers, Windows Ollama crash, the rewrite-with-pronoun caveat).
+4. Include a provider verification table listing ONLY providers actually run in this repo; do not claim an unrun path works.
+5. `Makefile` targets `install`, `test`, `demo`. `make demo` runs `digest 2401.12345 --auto --no-qa`, then one in-paper `ask` and one off-topic `ask`, using `LLM_PROVIDER` from the environment.
+
+Acceptance:
+- `make test` is green (paste output).
+- `make demo` runs end to end with `LLM_PROVIDER=groq` (paste output).
+- Every command shown in the README was executed for real (paste the runs); nothing in the README is unbacked by output.
+- `git status --short` shows only `README.md` and `Makefile` (plus BUILD_SPEC.md §11). No secrets.
+
+#### 8e — Hygiene + final verification
+Files: `.gitattributes`, `.gitignore`, `.env.example`, `scripts/*`, and `README.md`
+(demo link line only). No `src/` changes.
+
+Requirements and acceptance (paste unedited output for each):
+- a. `.gitattributes` with `* text=auto`.
+- b. Move the scratch scripts (`test_qa.py`, `trace_qa.py`, `check_abstain.py`) into `scripts/` with `git mv`; fix any paths. Run `python scripts/check_abstain.py` on `2401.12345` and `1706.03762`; append the results and the number of papers the abstain threshold was validated on to §11.
+- c. `.env.example` lists every environment variable read in `config.py`, including `ABSTAIN_MAX_DISTANCE`.
+- d. Secret check is empty: `git ls-files | grep -E '(^|/)\.env$'` and `git grep -nE "gsk_[A-Za-z0-9]{10,}|AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{20,}"`, plus a history check with `git log --all -p -S"gsk_" --oneline`.
+- e. Fresh-clone check (everything committed first): `git clone . /tmp/fresh && cd /tmp/fresh && make install && make test && make demo` with a Groq key supplied via the environment.
+- f. Tick every box in §10 (Definition of done) with a one-line evidence pointer.
+- g. Manual step for the user, not the agent: record the demo GIF/video of `make demo` with node transitions visible and save it as `docs/demo.gif`. Only after that file exists, the agent adds one link line to the README. Do not link a file that does not exist.
 
 ---
 
@@ -551,6 +685,65 @@ with the code.
   for the `digest`/`ask` commands, or the "QA reattaches to a session without
   re-parsing" claim (required by §4 and the assessment brief itself) will not
   actually hold at runtime even though the plumbing is built correctly.
+
+  ### Stage 6
+- `services/arxiv_client.py` — the S2 fix (return `PaperMeta`, not `dict`) was
+  **reverted** while adding a `url` field: `_paper_to_dict` went back to
+  returning a raw dict literal so a `url` key could be added freely, undoing
+  the S2 contract. **Lesson: when a Pydantic-returning function needs a new
+  field, add the field to the model — never downgrade the return type back to
+  a dict to sidestep the schema.** Re-fixed: `url: HttpUrl` added to
+  `PaperMeta` in `models.py`; `_paper_to_dict` renamed to `_paper_to_meta` and
+  restored to constructing `PaperMeta(...)`; both call sites (`search`,
+  `fetch_metadata`) updated to call `_paper_to_meta`. A rename like this
+  requires grepping the whole file for the old name before finishing — the
+  first attempt at this fix missed two call sites still calling
+  `_paper_to_dict`, which surfaced as `AttributeError` at runtime, including a
+  ~15x retry cascade through `search_arxiv` → `broaden_query` before the retry
+  cap kicked in (expected behavior once the underlying cause was understood,
+  but wastes real arXiv API calls while doing so).
+- `nodes/retrieval.py` — `search_arxiv` and `broaden_query` returned
+  `PaperMeta` objects straight into `state["candidates"]` (typed `list[dict]`)
+  without conversion, once `arxiv_client.py` started returning `PaperMeta`
+  again → both now convert via
+  `[c.model_dump(mode="json") if hasattr(c, "model_dump") else c for c in candidates]`
+  before returning.
+- **Recurring bug across three files: `.model_dump()` without `mode="json"`.**
+  Found in `nodes/retrieval.py`'s `fetch_metadata` and `nodes/summarize.py`'s
+  `summarize()` — both call `paper.model_dump()` (no `mode` argument) when
+  converting a `PaperMeta` for state storage. Plain `.model_dump()` leaves rich
+  types (`HttpUrl`, `datetime`) as live Python objects, which work fine for
+  direct attribute access but crash the moment LangGraph's checkpointer tries
+  to serialize them (`TypeError: Type is not msgpack serializable: HttpUrl`).
+  Fixed both call sites to use `model_dump(mode="json")`. **Standing rule:
+  every `.model_dump()` call on data that enters `AgentState` (which gets
+  checkpointed after every node) must use `mode="json"` — no exceptions. When
+  adding a new node that touches a Pydantic model, grep for bare
+  `model_dump()` before considering the node done.**
+- `nodes/summarize.py` — `_write_briefing()` (which persists
+  `examples/briefing_<id>.json` to disk) was called *before* `briefing.meta`
+  was populated, so every saved example file had `"meta": {}` — missing
+  `model`, `parse_mode`, `n_chunks`, `warnings`, `generated_at` — even though
+  the in-memory/returned state had the correct values. Fixed by moving the
+  `meta` construction and assignment above the `_write_briefing()` call.
+- `nodes/summarize.py` — `_reduce_phase`'s JSON repair loop only caught
+  `ValidationError` on both attempts, but `complete_json` can also raise
+  `json.JSONDecodeError` when the LLM's output isn't valid JSON at all (not
+  just schema-invalid) — that case skipped the `_fallback_briefing` safety net
+  entirely. Widened both `except` clauses to
+  `except (ValidationError, json.JSONDecodeError)`.
+- Observed, not yet confirmed as a pattern: one generated briefing's
+  `key_results[].evidence` field contained the limitations-guard's fallback
+  phrase ("Not explicitly stated by the authors; reviewer-inferred: ...")
+  where it clearly did not belong. Not fixed — watch for recurrence across
+  more papers before treating this as a real bug vs. a one-off LLM slip.
+
+  ### Stage 7
+- `graph.py` — turn-2+ QA history duplicated (q1,a1,q1,a1,q2,a2) → entry node was `lambda state: state`, which returned the full checkpointed state and made the `operator.add` reducers re-append messages/errors/warnings on every invoke; replaced with a named `_start()` returning `{}`. Rule: pass-through nodes must return `{}` and never echo state. Diagnosed via `g.stream(stream_mode="updates")` per-node counts.
+- `nodes/qa.py`, `config.py` — similarity gate `1 - distance < 0.35` never fired because bge-small distances are compressed (in-paper best 0.13–0.41, off-topic best 0.49–0.59) → gate on raw best cosine distance with `ABSTAIN_MAX_DISTANCE=0.45` (midpoint of the gap observed across two papers: 2401.12345 in-paper max 0.378 / off-topic min 0.494; 1706.03762 in-paper max 0.413 / off-topic min 0.488; the first pick of 0.43 left only 0.017 of margin on the in-paper side). Also abstain when the LLM answer has no valid citations. Only two papers validated; re-check if a third domain is added. `abstain_threshold` kept in config as deprecated.
+- `nodes/qa.py` — off-topic question passed the gate on turn 3 (raw distance 0.494 but rewritten query landed in-paper) → the query rewrite folded earlier-turn topics into a standalone question; rewrite now runs only for follow-ups (`_needs_rewrite`: ≤5 words or reference words). Known limitation: an off-topic follow-up containing a pronoun can still be pulled toward the paper by the rewrite.
+- Flagged, not fixed (S2/S3/S6): citation `section` labels are unreliable (appendix text labeled `experiments`), `page` is 0 on the pdfplumber path, extracted text has merged words, and briefing `evidence` figure/table references vary between runs (and "reviewer-inferred" wording leaks into that field).
+- Flagged for S8: `get_persistent_graph()` yields the SqliteSaver, not a compiled graph; the CLI must use `build_graph(checkpointer=saver)`.
 
 ---
 
