@@ -26,8 +26,9 @@ def search_arxiv(state: AgentState) -> dict[str, Any]:
 
     try:
         candidates = client.search(search_query)
-        logger.info(f"Found {len(candidates)} candidates for query: {search_query}")
-        return {"candidates": candidates}
+        candidate_dicts = [c.model_dump(mode="json") if hasattr(c, "model_dump") else c for c in candidates]
+        logger.info(f"Found {len(candidate_dicts)} candidates for query: {search_query}")
+        return {"candidates": candidate_dicts}
 
     except Exception as e:
         logger.error(f"arXiv search failed: {e}")
@@ -84,9 +85,10 @@ def broaden_query(state: AgentState) -> dict[str, Any]:
     # Search with broadened query
     try:
         candidates = client.search(new_query, sort_by=arxiv.SortCriterion.SubmittedDate)
-        if candidates:
+        candidate_dicts = [c.model_dump(mode="json") if hasattr(c, "model_dump") else c for c in candidates]
+        if candidate_dicts:
             return {
-                "candidates": candidates,
+                "candidates": candidate_dicts,
                 "search_query": new_query,
                 "retries": new_retries,
                 "warnings": [f"Query broadened (attempt {broaden_attempts + 1}): {new_query}"],
@@ -143,7 +145,7 @@ def fetch_metadata(state: AgentState) -> dict[str, Any]:
         paper = client.fetch_metadata(arxiv_id)
         if paper:
             # Convert Pydantic model to dict for state serialization
-            paper_dict = paper.model_dump() if hasattr(paper, 'model_dump') else paper
+            paper_dict = paper.model_dump(mode="json") if hasattr(paper, 'model_dump') else paper
             return {"paper": paper_dict, "candidates": [paper_dict]}
         else:
             return {"paper": None, "candidates": [], "errors": [{"code": "ARXIV_ID_NOT_FOUND", "node": "fetch_metadata", "detail": f"Paper {arxiv_id} not found", "recoverable": False}]}

@@ -32,7 +32,7 @@ def chunk_embed(state: AgentState) -> dict[str, Any]:
 
     # Handle both dict and Pydantic model
     if hasattr(paper, 'model_dump'):
-        paper = paper.model_dump()
+        paper = paper.model_dump(mode="json")
 
     arxiv_id = paper.get("arxiv_id")
     if not arxiv_id:

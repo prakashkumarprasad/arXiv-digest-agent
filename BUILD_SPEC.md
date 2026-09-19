@@ -10,7 +10,12 @@
 Copy this whole block into opencode, replacing only `<N>`:
 
 ```
-Read BUILD_SPEC.md in full, including §0 (ground rules) and §6 (exact interfaces).
+Read BUILD_SPEC.md in full, including §0 (ground rules), §6 (exact interfaces),
+and §11 (fix log — known issues, environment quirks, and design decisions from
+prior stages). §11 exists because earlier stages hit real bugs that are not
+obvious from the spec alone — read it before writing any code so you don't
+reintroduce a bug already fixed once, or ignore a constraint already learned.
+
 Implement STAGE <N> only, from the table in §9.
 
 Touch only the files listed for STAGE <N>. Do not modify any other file.
@@ -32,6 +37,9 @@ Before declaring this stage complete, you must:
    explain the deviation and update §6 yourself before proceeding.
 5. List every file touched and the specific function/class added or changed in
    each — not just a file list.
+6. If you hit and fixed a real bug, or made a deliberate design tradeoff, during
+   this stage, append an entry to §11 yourself, following the existing format —
+   don't leave it only in your own summary.
 
 Do not say "complete" or "acceptance criteria pass" until steps 1-4 are done and
 their real output is shown. If a check fails, fix it and re-run it — do not move on
@@ -410,6 +418,139 @@ Global flags: `--provider {groq,gemini,ollama}`, `--model`, `--top-k`, `--verbos
 | **S6 Summarize** | `nodes/summarize.py` | Valid `Briefing` JSON for 3 different papers; `limitations` never empty |
 | **S7 QA** | `nodes/qa.py` | 3 in-paper questions answered with citations; 1 out-of-paper question ("what does this say about the 2026 World Cup?") returns the abstain message |
 | **S8 CLI + polish** | `cli.py`, tests, `docs/architecture.md` | `make demo` runs end to end; `pytest` green; README example pasted from a real run |
+
+---
+
+## 11. Fix log & flagged issues (living document — read every stage, append every stage)
+
+This section records every real bug found, environment quirk hit, and deliberate
+design tradeoff made while building this project — the kind of thing that isn't
+visible from the spec alone and would otherwise only live in chat history. Read
+this in full before starting any stage. Append to it, in the same format, whenever
+you fix a real bug or make a deliberate tradeoff — don't let this drift out of sync
+with the code.
+
+**Entry format:** `[Stage] File — one-line symptom → one-line fix/decision`
+
+### Stage 2
+- `services/arxiv_client.py` — `_paper_to_dict` returned a plain `dict` instead of
+  the `PaperMeta` Pydantic model the rest of the system expects → now constructs
+  and returns `PaperMeta(...)` directly; return type hints updated to match.
+- `services/arxiv_client.py` — arXiv ID version-suffix stripping used
+  `entry_id.replace("v", "")`, which corrupts any ID containing a literal "v"
+  elsewhere → replaced with a `_extract_arxiv_id` static method using
+  `re.sub(r"v\d+$", "", raw)` (regex, trailing version suffix only).
+- `services/pdf_parser.py` — two-column PDF layouts (common in IEEE-style papers)
+  caused PyMuPDF to extract some passages twice (once as flowing prose, once as
+  broken one-word-per-line text) → added `page.get_text("text", sort=True)` and a
+  `_dedupe_repeated_blocks()` helper (difflib-based, `min_block_chars=60`) applied
+  to both the PyMuPDF and pdfplumber extraction paths. **Do not remove this** —
+  without it, chunk/embedding quality silently degrades on two-column papers.
+  Note: legitimate repeated phrasing (e.g. a Corollary restating a Theorem almost
+  verbatim, which is normal academic writing) is NOT a bug and should not trigger
+  further "fixes" — verified by inspecting exact character offsets and block
+  bounding boxes before concluding a repeat is genuine duplication vs. authored
+  repetition.
+
+### Stage 3
+- `services/vectorstore.py` — `get_collection()` did not pin an embedding function,
+  so ChromaDB silently used its own default (`ONNXMiniLM_L6_V2`), which tries to
+  download a model from the internet on first query and can time out /
+  ConnectTimeout in restricted-network environments. This also contradicts the
+  stack table (§1), which requires local `bge-small-en-v1.5` embeddings with no
+  network dependency → `get_collection()` now explicitly passes
+  `embedding_function=SentenceTransformerEmbeddingFunction(model_name="BAAI/bge-small-en-v1.5")`.
+  **Any code that constructs a Chroma collection must go through `get_collection()`
+  — never call `client.get_or_create_collection()` directly elsewhere, or this pin
+  gets bypassed.**
+- Consequence of the above: chunks embedded before this fix are incompatible with
+  chunks embedded after it (different embedding space). If you ever see a
+  collection behaving oddly on old data, delete and rebuild it rather than
+  debugging further.
+
+### Stage 4
+- `services/llm.py` — `PROVIDER_CONFIGS["groq"]["model"]` was set to
+  `llama-3.3-70b-versatile`, which Groq deprecated (confirmed via Groq's own
+  deprecation docs, deprecated June 17 2026) → changed to `openai/gpt-oss-120b`.
+  **Free-tier model names on Groq/other providers can and do change** — if a
+  provider call starts failing with a 404/`model_not_found`, check the provider's
+  current model list before assuming a code bug.
+- `services/llm.py` — Gemini provider code uses the deprecated
+  `google.generativeai` package (fully unmaintained per its own runtime warning)
+  and a deprecated model name (`gemini-1.5-flash`; current guidance says the whole
+  `gemini-1.5/2.0/2.5-*` family is legacy). **Deliberate decision: left as-is, not
+  fixed.** Groq and Ollama already satisfy the assessment's "no paid API key
+  required" constraint, so Gemini is redundant, not required. Documented as an
+  unverified/known-limitation provider in the README rather than spending time on
+  a full SDK migration (`google-generativeai` → `google-genai`, different client
+  API shape entirely). Do not "fix" this without being asked — it's a scoped,
+  intentional tradeoff, not an oversight.
+- `services/prompts.py` / future `nodes/qa.py` (flagged for Stage 7, not yet
+  built) — `qa_prompt()` labels context blocks `[S1]`, `[S2]`, ... purely by list
+  position, with no inherent link to a chunk's real `chunk_id`. `qa_node` MUST
+  build and retain an explicit `{"S1": chunk_id, ...}` mapping at retrieval time,
+  in the same order used to build the prompt's context blocks, for §5.9 step 5's
+  citation-validity post-check to be possible at all. See §5.9 for the full note.
+
+### Stage 5
+- `nodes/selection.py` — `_get_llm_relevance` defined `RelevanceScores` as a
+  Pydantic `BaseModel` wrapping the array in a `scores` field
+  (`{"scores": [...]}`), but `SYSTEM_SELECT_PAPER`'s own prompt instructs the LLM
+  to return a bare JSON array (`[{...}, {...}]`). Every correctly-formed LLM
+  response failed validation against a schema that didn't match the prompt's own
+  instructions, silently falling back to flat default scores (5.0/10 for every
+  candidate) → replaced `RelevanceScores(BaseModel)` with
+  `RelevanceScores(RootModel[list[RelevanceScore]])` (Pydantic v2 `RootModel`,
+  validates a bare array directly); access the list via `result.root`.
+  **Whenever a `complete_json` schema is defined, cross-check its shape against
+  the literal "Return JSON..." instruction in the matching system prompt in
+  `prompts.py` — a schema that "looks reasonable" can still silently disagree
+  with what the prompt actually asked the LLM to produce.**
+- `graph.py` — `_should_continue_broaden` routed back to `"search_arxiv"` any time
+  `search_query` was truthy, without checking whether `broaden_query` had already
+  found real candidates in that same call. This caused every *successful*
+  broadening to trigger a second, redundant `search_arxiv` call with the same
+  query, which then overwrote `broaden_query`'s already-good candidates (and used
+  a different sort order — `Relevance` vs. `broaden_query`'s `SubmittedDate` —
+  so the overwrite wasn't even equivalent) → added a `candidates` check that
+  routes straight to `"select_paper"` when `broaden_query` already found results;
+  registered `"select_paper"` as a new target in that conditional edge.
+- `state.py` — `messages` was declared twice in the `TypedDict` body (once plain,
+  once `Annotated[list[dict], operator.add]`); the second declaration silently
+  won at runtime (Python overwrites duplicate `TypedDict` annotations key-by-key)
+  so there was no functional bug, but it was confusing and a latent risk for a
+  future edit → removed the duplicate plain declaration, kept only the
+  `Annotated` one.
+- `state.py` — `errors`, `warnings`, and `messages` had no reducer, so any node
+  returning one of these keys **replaced** the accumulated list instead of
+  appending to it — meaning `broaden_query`'s warnings, or any earlier node's
+  errors, could be silently wiped out by a later node's return value. This would
+  have broken Stage 7's multi-turn QA history (`messages` needing to accumulate
+  across turns) in a way that's very hard to debug after the fact → added
+  `Annotated[list[X], operator.add]` to all three fields. **Any new
+  list-accumulating state field added in a later stage needs the same
+  `Annotated[..., operator.add]` treatment, or it will silently overwrite instead
+  of accumulate — this is easy to forget and won't raise an error, it'll just
+  silently lose data.**
+- `nodes/query_understanding.py` — `_build_arxiv_query`'s term filter only checks
+  `len(term) > 2`, so short stopwords ("for", "the", "and") survive into the
+  arXiv query as mandatory `all:"..."` AND-clauses, adding noise. **Not yet
+  fixed** — low priority, flagged for whoever next touches this file: add a
+  `STOPWORDS` set and filter on it alongside the length check.
+- Environment note, not a code bug: local Ollama has crashed at least once with a
+  CUDA / stack-buffer-overrun error (`exit status 0xc0000409`) on this machine.
+  The fallback-on-LLM-failure logic caught it correctly and didn't crash the
+  graph, but **set `LLM_PROVIDER=groq` in `.env` as the default before recording
+  any demo or running a stage that makes many LLM calls** (e.g. Stage 6
+  summarization), so a local GPU/driver crash doesn't interrupt a take or a long
+  run.
+- `graph.py` — `get_persistent_graph()` (the `SqliteSaver`-backed, persistent
+  version of the graph) exists but nothing currently calls it; `build_graph()`
+  defaults to `InMemorySaver()` unless a checkpointer is explicitly passed in.
+  **Flagged for Stage 8:** `cli.py` must explicitly use `get_persistent_graph()`
+  for the `digest`/`ask` commands, or the "QA reattaches to a session without
+  re-parsing" claim (required by §4 and the assessment brief itself) will not
+  actually hold at runtime even though the plumbing is built correctly.
 
 ---
 

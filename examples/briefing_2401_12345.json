@@ -1,0 +1,58 @@
+{
+  "arxiv_id": "2401.12345",
+  "title": "Distributionally Robust Receive Combining",
+  "authors": [
+    "Shixiong Wang",
+    "Wei Dai",
+    "Geoffrey Ye Li"
+  ],
+  "published": "2024-01-22T20:20:48Z",
+  "categories": [
+    "eess.SP"
+  ],
+  "url": "https://arxiv.org/abs/2401.12345",
+  "pdf_url": "https://arxiv.org/pdf/2401.12345v3",
+  "why_it_matters": "This paper addresses the challenge of handling uncertainties in wireless signal estimation by proposing a distributionally robust receive combining framework. This approach ensures robust performance even when signals are not discrete constellation points and are spatially correlated, making it particularly useful in scenarios with impulse channel noises and varying signal-to-noise ratios.",
+  "problem_statement": "The paper solves the problem of robust signal estimation in wireless communications, where signals can be arbitrary complex values and are spatially correlated, leading to uncertainties that traditional methods may not handle effectively.",
+  "method": [
+    "A distributionally robust receive combining framework is proposed to be insensitive to uncertainties.",
+    "The method involves tuning parameters using one-shot cross-validation to save training times.",
+    "The method is upper bounded by a spectral-norm-regularized empirical risk minimization problem.",
+    "Norm regularization methods are recommended to handle uncertain covariance matrices.",
+    "The data-perturbed counterpart can be constructed by considering data perturbation vectors (\u2206z, \u2206s)."
+  ],
+  "key_results": [
+    {
+      "claim": "For a fixed number M of transmit antennas, the larger the number N of receive antennas, the smaller the MSE.",
+      "evidence": "Not explicitly stated by the authors; reviewer-inferred: Figure 4",
+      "source_section": "Experiments"
+    },
+    {
+      "claim": "As the pilot size increases, the Wiener beamformer tends to have the best performance.",
+      "evidence": "Table 3",
+      "source_section": "Experiments"
+    },
+    {
+      "claim": "When R is accurately known, the Wiener-CE beamformer outperforms the general Wiener beamformer.",
+      "evidence": "Equation 15",
+      "source_section": "Results"
+    }
+  ],
+  "limitations": [
+    "Not explicitly stated by the authors; reviewer-inferred: The method's performance under non-linear signal models is not evaluated."
+  ],
+  "followup_questions": [
+    "How does the proposed method perform under non-linear signal models compared to traditional methods?",
+    "Can the method be extended to handle more complex channel models with additional uncertainties?",
+    "What are the computational complexities of the proposed method, and how do they compare to existing methods?",
+    "How robust is the method to inaccuracies in the known covariance matrices R, H, and Rv?",
+    "Can the method be adapted to work in real-time communication systems with limited computational resources?"
+  ],
+  "meta": {
+    "model": "ollama",
+    "parse_mode": "full",
+    "n_chunks": 65,
+    "warnings": [],
+    "generated_at": "2026-09-19T09:27:05.034066Z"
+  }
+}

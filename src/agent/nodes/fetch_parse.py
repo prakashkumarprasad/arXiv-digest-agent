@@ -23,7 +23,7 @@ def fetch_pdf(state: AgentState) -> dict[str, Any]:
 
     # Handle both dict and Pydantic model
     if hasattr(paper, 'model_dump'):
-        paper = paper.model_dump()
+        paper = paper.model_dump(mode="json")
 
     arxiv_id = paper.get("arxiv_id")
     pdf_url = paper.get("pdf_url")
@@ -85,7 +85,7 @@ def parse(state: AgentState) -> dict[str, Any]:
 
     # Handle both dict and Pydantic model
     if paper and hasattr(paper, 'model_dump'):
-        paper = paper.model_dump()
+        paper = paper.model_dump(mode="json")
 
     arxiv_id = paper.get("arxiv_id", "") if paper else ""
     arxiv_abstract = paper.get("summary", "") if paper else ""

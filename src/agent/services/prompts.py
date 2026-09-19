@@ -1,5 +1,6 @@
 """All prompt templates for the agent."""
 
+import json
 from typing import Any
 
 
@@ -104,7 +105,36 @@ arXiv ID: {paper_meta.get('arxiv_id', '')}"""
 Extracted bullets from all sections:
 {bullets_str}
 
-Produce the Briefing JSON."""
+Produce the Briefing JSON with EXACTLY this structure (no extra fields, no nested objects unless specified):
+
+{{
+  "arxiv_id": "{paper_meta.get('arxiv_id', '')}",
+  "title": "{paper_meta.get('title', '')}",
+  "authors": {json.dumps(paper_meta.get('authors', []))},
+  "published": "{paper_meta.get('published', '')}",
+  "categories": {json.dumps(paper_meta.get('categories', []))},
+  "url": "{paper_meta.get('url', '')}",
+  "pdf_url": "{paper_meta.get('pdf_url', '')}",
+  "why_it_matters": "1 paragraph plain English summary of significance",
+  "problem_statement": "What problem does this paper solve?",
+  "method": ["bullet 1", "bullet 2", ...],
+  "key_results": [
+    {{"claim": "specific claim", "evidence": "table/figure/eq reference", "source_section": "section name"}},
+    ...
+  ],
+  "limitations": ["limitation 1", "limitation 2", ...],
+  "followup_questions": ["question 1", "question 2", "question 3", "question 4", "question 5"],
+  "meta": {{}}
+}}
+
+Rules:
+- why_it_matters: 1 paragraph, plain English
+- method: list of strings (3-7 bullets from the extracted bullets)
+- key_results: list of objects with claim, evidence, source_section (3-7 items)
+- limitations: list of strings (MUST be non-empty, use "Not explicitly stated by the authors; reviewer-inferred: <one item>" if none found)
+- followup_questions: 3-5 specific research questions
+- ALL fields are required - do not omit any
+- Return ONLY valid JSON, no markdown, no extra text"""
 
 
 def qa_prompt(question: str, context_blocks: list[dict]) -> str:

@@ -16,6 +16,7 @@ class PaperMeta(BaseModel):
     updated: datetime
     categories: list[str]
     primary_category: str
+    url : HttpUrl
     pdf_url: HttpUrl
     entry_id: HttpUrl
     journal_ref: str | None = None

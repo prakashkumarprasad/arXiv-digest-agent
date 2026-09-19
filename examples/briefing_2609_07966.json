@@ -1,0 +1,58 @@
+{
+  "arxiv_id": "2609.07966",
+  "title": "MetaKV: Adaptive KV Cache Compression for Constrained LLM Inference",
+  "authors": [
+    "Michael Wang",
+    "Keith Li",
+    "Roozbeh Bostandoost"
+  ],
+  "published": "2026-09-07T20:44:23Z",
+  "categories": [
+    "cs.LG"
+  ],
+  "url": "https://arxiv.org/abs/2609.07966",
+  "pdf_url": "https://arxiv.org/pdf/2609.07966v1",
+  "why_it_matters": "This paper addresses the challenge of managing memory and latency in large language model inference, particularly in scenarios where GPU memory is constrained. By introducing adaptive KV cache compression methods such as KVQuant, H2O, and RocketKV, and an adaptive selection mechanism called METAKV, the authors provide a flexible and effective solution to optimize model performance under memory and latency constraints.",
+  "problem_statement": "The paper aims to solve the problem of managing memory and latency in large language model inference, especially when the KV cache consumes a significant portion of GPU memory during long-context inference.",
+  "method": [
+    "KVQuant reduces KV cache memory by storing Key and Value vectors with 2, 3, or 4 bits instead of full 16-bit precision.",
+    "H2O retains tokens based on their accumulated attention scores, evicting older tokens with the lowest scores when the KV cache exceeds a budget.",
+    "RocketKV combines token pruning and sparse attention, where SnapKV identifies and retains relevant tokens and Hybrid Sparse Attention attends to a subset of earlier tokens during each decoding step.",
+    "METAKV uses an Accuracy LightGBM to predict the correctness probabilities of candidate configurations and selects the highest scorer.",
+    "METAKV calculates a relative violation score (vc) for configurations that violate the user's limits, using predicted end-to-end latency (\u02c6Lc) and peak memory utilization (Mc) to identify the configuration that exceeds the limits the least."
+  ],
+  "key_results": [
+    {
+      "claim": "KVQuant uses about 29% less peak KV cache memory than H2O and 71% less than RocketKV on average.",
+      "evidence": "Figure 3",
+      "source_section": "Method"
+    },
+    {
+      "claim": "METAKV consistently outperforms STATICBASELINE, achieving an average improvement of approximately 0.07 in Constrained Success Rate (CSR) across all tested constraint pairs.",
+      "evidence": "Table 4",
+      "source_section": "Evaluation"
+    },
+    {
+      "claim": "METAKV improves CSR by 0.10\u20130.13 at the 30 MB peak memory threshold, the largest and most consistent gains among tested constraints.",
+      "evidence": "Table 4",
+      "source_section": "Evaluation"
+    }
+  ],
+  "limitations": [
+    "Not explicitly stated by the authors; reviewer-inferred: METAKV requires reprofiling candidate configurations and retraining predictors for different LLMs or hardware platforms."
+  ],
+  "followup_questions": [
+    "How does the performance of METAKV change with different LLM architectures and hardware configurations?",
+    "Can the accuracy of the LightGBM model be improved by incorporating additional metrics beyond end-to-end latency and peak memory utilization?",
+    "What are the trade-offs between the accuracy and latency of the different KV cache compression methods, and how can these trade-offs be optimized?",
+    "How does the memory and latency optimization impact the overall energy consumption of the inference process?",
+    "Can the adaptive selection mechanism be extended to other deployment metrics such as time-to-first-token, throughput, inference cost, or energy consumption?"
+  ],
+  "meta": {
+    "model": "ollama",
+    "parse_mode": "full",
+    "n_chunks": 26,
+    "warnings": [],
+    "generated_at": "2026-09-19T09:19:36.267864Z"
+  }
+}

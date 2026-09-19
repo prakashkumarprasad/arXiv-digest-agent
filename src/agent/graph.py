@@ -16,8 +16,8 @@ from agent.nodes.retrieval import search_arxiv, broaden_query, fetch_metadata
 from agent.nodes.fetch_parse import fetch_pdf, parse, degrade_mode
 from agent.nodes.indexing import chunk_embed
 from agent.nodes.selection import select_paper
-# Summarize and QA nodes will be added in later stages
-# from agent.nodes.summarize import summarize
+from agent.nodes.summarize import summarize
+# QA node will be added in later stages
 # from agent.nodes.qa import qa_node
 
 
@@ -103,7 +103,7 @@ def build_graph(checkpointer=None) -> StateGraph:
     workflow.add_node("parse", parse)
     workflow.add_node("degrade_mode", degrade_mode)
     workflow.add_node("chunk_embed", chunk_embed)
-    # workflow.add_node("summarize", summarize)  # Stage 6
+    workflow.add_node("summarize", summarize)
     # workflow.add_node("qa_node", qa_node)  # Stage 7
 
     # Set entry point
@@ -162,8 +162,11 @@ def build_graph(checkpointer=None) -> StateGraph:
     # degrade_mode -> chunk_embed
     workflow.add_edge("degrade_mode", "chunk_embed")
 
-    # chunk_embed -> END (for now, until summarize is added)
-    workflow.add_edge("chunk_embed", END)
+    # chunk_embed -> summarize
+    workflow.add_edge("chunk_embed", "summarize")
+
+    # summarize -> END
+    workflow.add_edge("summarize", END)
 
     return workflow.compile(checkpointer=checkpointer)
 
