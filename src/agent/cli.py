@@ -170,7 +170,7 @@ def digest(
         n_errs = len(graph.get_state(config).values.get("errors", []))
         # `question` persists in the checkpoint and `_route_mode` sends any truthy
         # question to qa_node, so a re-digest must reset it or it silently skips the digest.
-        values = _run(graph, {"raw_input": raw_input, "question": None}, config)
+        values = _run(graph, {"raw_input": raw_input, "question": None, "retries": {}}, config)
 
     briefing = values.get("briefing")
     if not briefing:

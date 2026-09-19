@@ -784,3 +784,11 @@ with the code.
 - [ ] `docs/architecture.md` has a Mermaid graph generated from the actual compiled LangGraph.
 - [ ] README has: architecture, state table, setup, example run, rate-limit note, **Design Decisions & Tradeoffs**, known limitations, "what I'd do next".
 - [ ] No secrets committed; `.env` is gitignored.
+### Stage 8b
+- `state.py` — `retries` was in the §3 state shape but missing from `AgentState`, so LangGraph silently dropped `retries` from every node return: `broaden_query` re-ran "attempt 1" forever and the zero-result path hit GraphRecursionError instead of ending cleanly (and the `fetch_pdf` retry counter never persisted) → added `retries: dict[str, int]` (no reducer: nodes return the full updated dict). Found by tests/test_zero_results_graph.py; routing-function tests missed it because they merge state by hand.
+- `cli.py` — `retries` now persists in the checkpoint, so a re-run of `digest` on the same thread would inherit old counts → the digest invoke input now passes `"retries": {}` (same reason as `"question": None`).
+- KNOWN, NOT FIXED: `retrieval.py::_broaden_attempt_2` builds `all:all:term` when given attempt 1's output, and takes the first two terms rather than the two highest-IDF terms.
+- KNOWN, NOT FIXED: the ZERO_RESULTS_EXHAUSTED `detail` has only the last query labelled "Original query" and no suggestion; spec §5.3 wants an actionable message plus all queries tried.
+- `tests/conftest.py` replaces `sentence_transformers` in `sys.modules` at import to avoid an ~11s load; unit tests must never need the real library.
+- Git warns "LF will be replaced by CRLF": add a `.gitattributes` in 8e.
+- `graph.py` has dead code (`_sqlite_checkpointer`, `_sqlite_checkpointer_context`, `_memory_checkpointer` globals), for 8e cleanup.
