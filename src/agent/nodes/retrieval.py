@@ -105,32 +105,56 @@ def broaden_query(state: AgentState) -> dict[str, Any]:
     }
 
 
+_STOPWORDS = {"the", "and", "for", "with", "from", "into", "onto", "via", "not", "are", "was", "were"}
+
+
 def _broaden_attempt_1(query: str) -> str:
-    """First broadening: drop quotes and cat: filter, AND -> OR."""
-    # Remove cat: filters
-    query = re.sub(r"\s+cat:\w+", "", query)
-    # Replace AND with OR
-    query = query.replace(" AND ", " OR ")
-    # Remove quotes
-    query = query.replace('"', "")
-    return query.strip()
+    """First broadening: drop the category filter and quotes, relax AND to OR.
+
+    Expects the shape built by query_understanding._build_arxiv_query, e.g.
+    (all:"a" AND all:"b") AND (cat:cs.CL OR cat:cs.LG). The whole category clause
+    must go: relaxing it to OR would match every paper in those categories,
+    whatever the search terms.
+    """
+    # Remove the whole "AND (cat:X OR cat:Y)" clause.
+    query = re.sub(r"\s+AND\s+\(\s*cat:[\w.\-]+(?:\s+OR\s+cat:[\w.\-]+)*\s*\)", "", query)
+    # Remove any stray "AND cat:X" / "OR cat:X" filter.
+    query = re.sub(r"\s+(?:AND|OR)\s+cat:[\w.\-]+", "", query)
+    # Drop grouping parentheses and quotes, then relax AND to OR.
+    query = query.replace("(", " ").replace(")", " ").replace('"', "")
+    query = re.sub(r"\s+AND\s+", " OR ", query)
+    return re.sub(r"\s+", " ", query).strip()
+
+
+def _extract_terms(query: str) -> list[str]:
+    """Pull the search words out of a query, dropping prefixes, operators and stopwords."""
+    raw = re.findall(r'all:"?([^\s()"]+)', query)
+    if not raw:  # plain words, no all: prefixes
+        raw = re.findall(r"[A-Za-z0-9\-]+", query)
+    terms: list[str] = []
+    for term in raw:
+        term = re.sub(r"^(?:all:)+", "", term)
+        if (
+            len(term) > 2
+            and term.upper() not in {"AND", "OR", "NOT"}
+            and term.lower() not in _STOPWORDS
+            and term not in terms
+        ):
+            terms.append(term)
+    return terms
 
 
 def _broaden_attempt_2(query: str) -> str:
-    """Second broadening: keep only two highest-IDF terms."""
-    # Simple heuristic: take first two meaningful terms
-    terms = query.split()
-    # Filter out common stopwords and operators
-    stopwords = {"the", "a", "an", "and", "or", "of", "in", "on", "for", "to", "with", "by", "is", "are", "was", "were"}
-    meaningful_terms = [t for t in terms if t.lower() not in stopwords and len(t) > 2]
+    """Second broadening: keep only the two most distinctive terms.
 
-    # Take first two
-    if len(meaningful_terms) >= 2:
-        return f"all:{meaningful_terms[0]} OR all:{meaningful_terms[1]}"
-    elif meaningful_terms:
-        return f"all:{meaningful_terms[0]}"
-    else:
+    No corpus statistics are available here, so the two longest words stand in
+    for "highest IDF" (longer words are rarer on average).
+    """
+    terms = _extract_terms(query)
+    if not terms:
         return query
+    keep = set(sorted(terms, key=len, reverse=True)[:2])
+    return " OR ".join(f"all:{t}" for t in terms if t in keep)
 
 
 def fetch_metadata(state: AgentState) -> dict[str, Any]:
