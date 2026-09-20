@@ -44,28 +44,9 @@ def _route_mode(state: AgentState) -> str:
     return "query_understanding"
 
 
-# Global checkpointer instances
-_sqlite_checkpointer = None
-_memory_checkpointer = None
-
-
-@contextmanager
-def _sqlite_checkpointer_context():
-    """Context manager for SqliteSaver checkpointer."""
-    global _sqlite_checkpointer
-    if _sqlite_checkpointer is None:
-        settings = get_settings()
-        _sqlite_checkpointer = SqliteSaver.from_conn_string(str(settings.sqlite_db_path))
-        _sqlite_checkpointer = _sqlite_checkpointer.__enter__()
-    yield _sqlite_checkpointer
-
-
 def _get_memory_checkpointer():
-    """Get or create the shared InMemorySaver checkpointer."""
-    global _memory_checkpointer
-    if _memory_checkpointer is None:
-        _memory_checkpointer = InMemorySaver()
-    return _memory_checkpointer
+    """Get the shared InMemorySaver checkpointer."""
+    return InMemorySaver()
 
 
 def _route_intent(state: AgentState) -> str:
