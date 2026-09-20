@@ -3,6 +3,8 @@
 import json
 import logging
 import os
+import re
+import time
 from typing import Any, Type
 
 from pydantic import BaseModel, ValidationError
@@ -10,6 +12,38 @@ from pydantic import BaseModel, ValidationError
 from agent.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Rate-limit handling: extra attempts after a 429, and the longest wait we will sit
+# through. A longer wait means a quota reset (e.g. a daily limit), so we fail fast.
+MAX_RATE_LIMIT_RETRIES = 4
+MAX_RATE_LIMIT_WAIT_S = 60.0
+
+_WAIT_RE = re.compile(r"try again in\s+((?:\d+(?:\.\d+)?(?:ms|m|s|h))+)", re.IGNORECASE)
+_UNIT_RE = re.compile(r"(\d+(?:\.\d+)?)(ms|h|m|s)", re.IGNORECASE)
+_UNIT_SECONDS = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
+
+
+def _parse_wait(text: str) -> float | None:
+    """Parse 'try again in 3.29s' / '2m30.5s' / '250ms' from a provider error message."""
+    match = _WAIT_RE.search(text)
+    if not match:
+        return None
+    return sum(float(n) * _UNIT_SECONDS[u.lower()] for n, u in _UNIT_RE.findall(match.group(1)))
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """Seconds the provider asks us to wait: the Retry-After header first, else the message text."""
+    headers = getattr(getattr(exc, "response", None), "headers", None)
+    if headers:
+        value = headers.get("retry-after")
+        if value:
+            try:
+                return float(value)
+            except ValueError:
+                pass
+    return _parse_wait(str(exc))
+
+
 
 # Provider configurations
 PROVIDER_CONFIGS = {
@@ -85,7 +119,7 @@ class LLMClient:
             return response.text
         else:
             # OpenAI-compatible (Groq, Ollama)
-            response = client.chat.completions.create(
+            response = self._create_with_backoff(
                 model=self.config["model"],
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -95,6 +129,29 @@ class LLMClient:
                 max_tokens=4000,
             )
             return response.choices[0].message.content
+
+    def _create_with_backoff(self, **kwargs):
+        """Call chat.completions.create, waiting out provider rate limits (HTTP 429).
+
+        The original request is re-sent unchanged. A wait longer than
+        MAX_RATE_LIMIT_WAIT_S, or running out of attempts, re-raises the original error.
+        """
+        from openai import RateLimitError
+
+        client = self._get_client()
+        for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+            try:
+                return client.chat.completions.create(**kwargs)
+            except RateLimitError as e:
+                wait = _retry_after_seconds(e)
+                if attempt >= MAX_RATE_LIMIT_RETRIES or (wait is not None and wait > MAX_RATE_LIMIT_WAIT_S):
+                    raise
+                delay = (wait if wait is not None else 2.0 * (attempt + 1)) + 0.5
+                logger.warning(
+                    f"Rate limited by {self.provider}; waiting {delay:.1f}s "
+                    f"(retry {attempt + 1}/{MAX_RATE_LIMIT_RETRIES})"
+                )
+                time.sleep(delay)
 
     def complete_json(self, schema: Type[BaseModel], system_prompt: str, user_prompt: str) -> BaseModel:
         """Get a JSON completion validated against a Pydantic schema with one retry."""
