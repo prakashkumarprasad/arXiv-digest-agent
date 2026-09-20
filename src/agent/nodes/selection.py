@@ -20,14 +20,21 @@ class PaperScore:
         self.reason = reason
 
 
-def select_paper(state: AgentState) -> dict[str, Any]:
-    """Rank candidates and select the best paper.
+# Minimum LLM relevance (0-10) a candidate needs to be digested. The composite score adds
+# recency and full-text points that any recent paper earns (4 of 10 for free), so it cannot
+# tell "relevant" from "newest": the floor is applied to the LLM relevance alone, before ranking.
+MIN_LLM_RELEVANCE = 4.0
 
-    Implements the select_paper node from the graph.
+
+def select_paper(state: AgentState) -> dict[str, Any]:
+    """Rank candidates and select the best relevant paper.
+
     - Score = 0.6 * llm_relevance + 0.25 * recency_decay + 0.15 * has_full_text
-    - llm_relevance: batched LLM call for top 10
-    - Interactive mode: Rich table, --auto picks rank 1
-    - Stores selection_reason in state
+    - llm_relevance: batched LLM call for the top 10, judged against the user's own request
+    - Candidates below MIN_LLM_RELEVANCE are dropped before ranking. If none remain, the node
+      returns paper=None and a NO_RELEVANT_PAPER error, and the graph ends.
+    - If LLM scoring itself fails, the floor is skipped (there is nothing to judge with).
+    - Auto mode: picks rank 1.
     """
     candidates = state.get("candidates", [])
     if not candidates:
@@ -38,9 +45,12 @@ def select_paper(state: AgentState) -> dict[str, Any]:
 
     # Limit to top 10 for LLM scoring
     top_candidates = candidates[:10]
+    request = state.get("raw_input") or state.get("search_query") or ""
 
-    # Get LLM relevance scores
-    llm_scores = _get_llm_relevance(top_candidates, state.get("search_query", ""))
+    llm_scores = _get_llm_relevance(top_candidates, request)
+    scoring_failed = llm_scores is None
+    if scoring_failed:
+        llm_scores = {i: 5.0 for i in range(len(top_candidates))}
 
     # Calculate composite scores
     scored_papers = []
@@ -52,11 +62,32 @@ def select_paper(state: AgentState) -> dict[str, Any]:
         composite = 0.6 * llm_score + 0.25 * recency_score + 0.15 * full_text_score
         scored_papers.append((composite, i, candidate, llm_score, recency_score, full_text_score))
 
+    if not scoring_failed:
+        relevant = [p for p in scored_papers if p[3] >= MIN_LLM_RELEVANCE]
+        if not relevant:
+            best = max(scored_papers, key=lambda p: p[3])
+            closest = str(best[2].get("title", "Unknown"))[:80]
+            return {
+                "paper": None,
+                "selection_reason": f"No candidate reached the minimum relevance of {MIN_LLM_RELEVANCE:.0f}/10 (best: {best[3]:.0f}/10).",
+                "errors": [{
+                    "code": "NO_RELEVANT_PAPER",
+                    "node": "select_paper",
+                    "detail": (
+                        f"Found {len(candidates)} paper(s), but none looks relevant to your request "
+                        f"(best relevance {best[3]:.0f}/10, minimum {MIN_LLM_RELEVANCE:.0f}/10; "
+                        f"closest match: '{closest}'). "
+                        "Try more specific keywords, or give an arXiv ID directly."
+                    ),
+                    "recoverable": False,
+                }],
+            }
+        scored_papers = relevant
+
     # Sort by composite score descending
     scored_papers.sort(key=lambda x: x[0], reverse=True)
 
     # Auto mode: pick rank 1
-    # In a real CLI, we'd check for --auto flag. For now, assume auto.
     selected_idx = scored_papers[0][1]
     selected_paper = scored_papers[0][2]
     selection_reason = _format_selection_reason(scored_papers, selected_idx)
@@ -69,7 +100,7 @@ def select_paper(state: AgentState) -> dict[str, Any]:
     }
 
 
-def _get_llm_relevance(candidates: list[dict], query: str) -> dict[int, float]:
+def _get_llm_relevance(candidates: list[dict], query: str) -> dict[int, float] | None:
     """Get LLM relevance scores for top 10 candidates."""
     try:
         from pydantic import BaseModel
@@ -95,9 +126,8 @@ def _get_llm_relevance(candidates: list[dict], query: str) -> dict[int, float]:
             scores[item.index] = float(item.score)
         return scores
     except Exception as e:
-        logger.warning(f"LLM relevance scoring failed: {e}, using default scores")
-        # Default: all get 5/10
-        return {i: 5.0 for i in range(len(candidates))}
+        logger.warning(f"LLM relevance scoring failed: {e}; the relevance floor is skipped")
+        return None
 
 
 def _calculate_recency_score(candidate: dict) -> float:

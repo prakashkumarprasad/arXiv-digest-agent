@@ -47,3 +47,4 @@ class AgentState(TypedDict, total=False):
     warnings: Annotated[list[str], operator.add]
     messages: Annotated[list[dict], operator.add]
     retries: dict[str, int]
+    queries_tried: list[str]

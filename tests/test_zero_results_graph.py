@@ -72,3 +72,11 @@ def test_zero_results_graph_ends_cleanly(monkeypatch):
     assert len(exhausted) == 1
     assert "No results after 2 broadening attempts" in exhausted[0]["detail"]
     assert "Traceback" not in exhausted[0]["detail"]
+
+    # The message lists every query tried and says what to do next.
+    detail = exhausted[0]["detail"]
+    assert "Queries tried:" in detail
+    assert search_calls[0] in detail  # the original query
+    assert search_calls[1] in detail  # broadened attempt 1
+    assert search_calls[3] in detail  # broadened attempt 2
+    assert "arXiv ID" in detail

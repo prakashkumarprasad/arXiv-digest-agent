@@ -44,19 +44,25 @@ def search_arxiv(state: AgentState) -> dict[str, Any]:
 def broaden_query(state: AgentState) -> dict[str, Any]:
     """Broaden the search query when zero results are returned.
 
-    Implements the broaden_query node - attempts to relax the query
-    up to 2 times before giving up.
+    Relaxes the query up to 2 times before giving up. Every query tried is
+    recorded in ``queries_tried`` so the final error can list them.
     """
     retries = state.get("retries", {})
     broaden_attempts = retries.get("broaden_query", 0)
+    tried_so_far = list(state.get("queries_tried") or [])
 
     if broaden_attempts >= 2:
         # Exhausted broadening attempts
-        original_query = state.get("search_query", "")
+        last_query = state.get("search_query") or ""
+        tried = tried_so_far or ([last_query] if last_query else [])
+        listed = " | ".join(f"({i}) {q}" for i, q in enumerate(tried, 1)) or "(none recorded)"
         error = {
             "code": "ZERO_RESULTS_EXHAUSTED",
             "node": "broaden_query",
-            "detail": f"No results after 2 broadening attempts. Original query: {original_query}",
+            "detail": (
+                f"No results after 2 broadening attempts. Queries tried: {listed}. "
+                "Try fewer or different keywords, a more specific topic, or give an arXiv ID directly."
+            ),
             "recoverable": False,
         }
         return {
@@ -65,17 +71,18 @@ def broaden_query(state: AgentState) -> dict[str, Any]:
             "search_query": None,  # Signal termination
         }
 
-    original_query = state.get("search_query", "")
+    original_query = state.get("search_query") or ""
     client = get_arxiv_client()
 
     if broaden_attempts == 0:
         # Attempt 1: drop quotes and cat: filter, AND -> OR
         new_query = _broaden_attempt_1(original_query)
+        tried = [original_query, new_query]
         logger.info(f"Broadening query (attempt 1): {original_query} -> {new_query}")
-
     else:
-        # Attempt 2: keep only two highest-IDF terms, widen sort_by=SubmittedDate
+        # Attempt 2: keep only the two most distinctive terms
         new_query = _broaden_attempt_2(original_query)
+        tried = tried_so_far + [new_query]
         logger.info(f"Broadening query (attempt 2): {original_query} -> {new_query}")
 
     # Increment retry counter
@@ -91,6 +98,7 @@ def broaden_query(state: AgentState) -> dict[str, Any]:
                 "candidates": candidate_dicts,
                 "search_query": new_query,
                 "retries": new_retries,
+                "queries_tried": tried,
                 "warnings": [f"Query broadened (attempt {broaden_attempts + 1}): {new_query}"],
             }
     except Exception as e:
@@ -101,7 +109,8 @@ def broaden_query(state: AgentState) -> dict[str, Any]:
         "candidates": [],
         "search_query": new_query,
         "retries": new_retries,
-        "warnings": [f"Broadening attempt {broaden_attempts + 1} yielded no results"],
+        "queries_tried": tried,
+        "warnings": [f"Broadening attempt {broaden_attempts + 1} yielded no results: {new_query}"],
     }
 
 

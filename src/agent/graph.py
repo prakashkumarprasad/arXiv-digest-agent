@@ -67,6 +67,11 @@ def _route_candidate_count(state: AgentState) -> str:
     return "select_paper"
 
 
+def _route_after_selection(state: AgentState) -> str:
+    """Route after selection: a chosen paper -> fetch_pdf, no relevant paper -> end."""
+    return "fetch_pdf" if state.get("paper") else "end"
+
+
 def _route_parse_quality(state: AgentState) -> str:
     """Route based on parse quality: full -> chunk_embed, degraded/failed -> degrade_mode."""
     parse_mode = state.get("parse_mode", "failed")
@@ -167,8 +172,12 @@ def build_graph(checkpointer=None) -> StateGraph:
         },
     )
 
-    # select_paper -> fetch_pdf
-    workflow.add_edge("select_paper", "fetch_pdf")
+    # select_paper -> fetch_pdf, or END when no candidate was relevant enough
+    workflow.add_conditional_edges(
+        "select_paper",
+        _route_after_selection,
+        {"fetch_pdf": "fetch_pdf", "end": END},
+    )
 
     # fetch_pdf -> parse
     workflow.add_edge("fetch_pdf", "parse")
