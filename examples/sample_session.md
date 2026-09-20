@@ -1,18 +1,12 @@
-# Sample Session — arXiv Digest Agent
+# Sample session
 
-All commands were run with `LLM_PROVIDER=ollama` (qwen2.5:7b-instruct). ANSI codes stripped.
+Real, unedited output of a run with `LLM_PROVIDER=groq`, started from an empty session store (only trailing whitespace was stripped).
 
----
-
-### 1. Digest run
+## 1. Digest
 
 ```
-$ python -m agent.cli digest 2401.12345 --auto --no-qa --json-out .data/briefing_check.json
-```
-
-Output: PyMuPDF parsing degraded, trying pdfplumber fallback. Then the briefing is printed:
-
-```
+$ python -m agent.cli digest 2401.12345 --auto --no-qa
+PyMuPDF parsing degraded, trying pdfplumber fallback
                    Distributionally Robust Receive Combining
 
 Authors: Shixiong Wang, Wei Dai, Geoffrey Ye Li
@@ -24,111 +18,139 @@ arXiv: 2401.12345 | PDF
 
 Why It Matters
 
-This paper proposes a distributionally robust receive combining framework that
-addresses uncertainties in wireless signal estimation, making it particularly
-useful in challenging environments with spatially correlated signals and
-arbitrary complex values. The method ensures robust performance by leveraging
-norm regularization and empirical risk minimization, which are crucial for
-handling uncertain covariance matrices.
+The paper introduces a unified, distributionally robust framework for
+receive‑combining that remains reliable even when key system parameters such as
+channel state, noise statistics, and transmit‑signal covariance are uncertain
+or estimated from limited pilot data. By encompassing many classic combiners
+(ZF, MMSE, MVDR, etc.) as special cases and integrating modern
+neural‑network‑based receivers, the work promises more dependable wireless
+links in realistic, imperfect environments, which is critical for
+next‑generation communication systems that must operate under tight latency,
+hardware, and training‑data constraints.
 
-...
+Problem Statement
+
+The authors address the challenge of accurately estimating transmitted signals
+in wireless systems when the underlying statistical models (channel matrix,
+noise covariance, transmit‑signal covariance, etc.) are uncertain or only
+partially known, and when only a small number of pilot samples are available
+for training.
+
+Method
+
+ • Under technical conditions, the original optimization problem is
+   upper‑bounded by a spectral‑norm‑regularized empirical risk minimization
+   (ERM) problem for any matrix norm, guaranteeing global optimality in
+   reproducing‑kernel Hilbert spaces (RKHSs).
+ • Corollary 5 shows that the regularized ERM problem is equivalent to a
+   Tikhonov (trace) regularizer, which reduces to ridge regression or kernel
+   ridge regression when the second‑order moment of the data‑perturbation
+   vector Δ is bounded by εF.
+ • For wireless‑signal neural‑network training, norm regularization is
+   recommended because norms on real spaces are equivalent, allowing the bound
+   to be further tightened by the estimated channel matrix Ĥ.
+ • The covariance matrix of the transmitted signal is estimated by the sample
+   covariance R̂ = S Sᴴ / L, and the channel matrix is estimated via
+   minimum‑mean‑square‑error as Ĥ = X Sᴴ (S Sᴴ)⁻¹.
+ • The estimated matrices R̂_s, Ĥ, and R̂_v are then used in beamformers such as
+   Wiener and Capon, while acknowledging that they remain uncertain relative to
+   the true (possibly time‑varying) matrices.
+
+Key Results
+
+ • Diagonal‑loading operations significantly improve estimation performance,
+   especially when the pilot data size is relatively small. (Evidence: Table
+   II, Section: experiments)
+ • Kernel‑DL achieves lower MSE than linear beamformers (e.g., Wnr‑DL MSE =
+   1.23 vs. Wnr MSE = 1.38), whereas the non‑robust Kernel method can suffer
+   numerical instability during kernel‑matrix inversion. (Evidence: experiments
+   section, Section: experiments)
+ • Increasing the number of receive antennas while keeping the number of
+   transmit antennas fixed reduces MSE, demonstrating the benefit of antenna
+   diversity. (Evidence: Fig. 2a vs 2c, Section: results)
+ • Higher SNR leads to lower MSE for a given antenna configuration. (Evidence:
+   Fig. 2c vs 2d, Section: results)
+ • When the covariance matrix R_v is known, the Wiener‑CE beamformer
+   outperforms the standard Wiener beamformer by exploiting the linear signal
+   model in addition to pilot data. (Evidence: Fig. 2b, Section: results)
+
+Limitations
+
+ • Not explicitly stated by the authors; reviewer-inferred: the framework
+   relies on accurate estimation of covariance and channel matrices, so
+   performance may degrade in highly non‑stationary or rapidly time‑varying
+   channels where these estimates become stale.
+
+Follow-up Questions
+
+ 1 How does the proposed distributionally robust framework perform under severe
+   model mismatch, such as non‑Gaussian noise or hardware impairments beyond
+   power‑amplifier non‑ideality?
+ 2 Can the spectral‑norm‑regularized ERM formulation be extended to jointly
+   optimize pilot placement and training length for further robustness?
+ 3 What is the computational complexity of Kernel‑DL in large‑scale antenna
+   arrays, and can approximate kernel methods (e.g., random Fourier features)
+   retain robustness while reducing cost?
+ 4 How does the method adapt to online or streaming scenarios where channel
+   statistics evolve and pilot data must be incorporated incrementally?
+ 5 Is it possible to integrate the robust receive‑combining approach with
+   multi‑user MIMO scheduling to jointly mitigate inter‑user interference and
+   estimation uncertainty?
+
+-------------------------------------------------------------------------------
+
+Generated by arXiv Digest Agent
 
 Session saved. Thread ID: 2401.12345
 Use 'python -m agent.cli ask 2401.12345 "your question"' to ask questions
 ```
 
----
-
-### 2. In-paper ask with citations
+## 2. In-paper question
 
 ```
-$ python -m agent.cli ask 2401.12345 "What datasets did they evaluate on?" --verbose
-```
-
-Output:
-
-```
+$ python -m agent.cli ask 2401.12345 "Which beamformers did they compare?" --verbose
 node=start
 node=qa_node
 
-The method evaluated on datasets with pilot data and testing datasets. The
-pilot dataset is used for training, while the testing dataset is used for
-evaluation.
+They compared several beamformers: Wiener, Wiener‑DL (Wiener with diagonal
+loading), Wiener‑DR (distributionally robust Wiener), Wiener‑CE
+(channel‑estimation‑based Wiener), Wiener‑CE‑DL, Wiener‑CE‑DR, Capon, Capon‑DL,
+Zero‑forcing (ZF), Kernel, and Kernel‑DL.
 
 Citations:
-  • experiments, p.?  (2401.12345:50)
-  • experiments, p.?  (2401.12345:44)
-```
-
-The node transitions show only `start` and `qa_node` — no `fetch_pdf`, `parse`, `chunk_embed`, or `summarize` (the paper state is restored from the checkpointer).
-
----
-
-### 3. Pronoun follow-up ask
-
-```
-$ python -m agent.cli ask 2401.12345 "How does it compare to the Wiener beamformer?" --verbose
-```
-
-Output:
-
-```
-node=start
-node=qa_node
-
-The Wiener beamformer and the Wiener-DL beamformer are compared in terms of
-performance and computational burden. The Wiener-DL beamformer provides a good
-balance between computational burden and performance, making it practically
-promising. The Wiener-DR beamformer, although potentially better, has a
-significant computational burden, which limits its practical use.
-
-Citations:
+  • experiments, p.?  (2401.12345:40)
   • experiments, p.?  (2401.12345:43)
-  • Abstract, p.?  (2401.12345:28)
 ```
 
-The pronoun "it" is rewritten using conversation history before retrieval.
-
----
-
-### 4. Off-topic question returning abstain message
+## 3. Pronoun follow-up
 
 ```
-$ python -m agent.cli ask 2401.12345 "What does this paper say about the 2026 World Cup?" --verbose
-```
-
-Output:
-
-```
+$ python -m agent.cli ask 2401.12345 "Which of them suppresses outliers best?" --verbose
 node=start
 node=qa_node
 
+The robust Kernel‑DL beamformer (Kernel‑DL) suppresses outliers best, as it
+consistently outperforms all other beamformers.
+
+Citations:
+  • experiments, p.?  (2401.12345:42)
+```
+
+## 4. Off-topic question
+
+```
+$ python -m agent.cli ask 2401.12345 "What does this paper say about the 2026 World Cup?"
 That isn't covered in this paper.
 ```
 
-The abstain gate fires because the best retrieved chunk distance exceeds
-`abstain_max_distance` (0.45). The LLM is not called. The exact abstain line
-is: **That isn't covered in this paper.**
-
----
-
-### 5. Sessions list
+## 5. Saved sessions
 
 ```
 $ python -m agent.cli sessions
+Saved Sessions
+┌────────────┐
+│ Thread ID  │
+├────────────┤
+│ 2401.12345 │
+└────────────┘
 ```
-
-Output:
-
-```
-              Saved Sessions
-┌─────────────────────────────────────────┐
-│ Thread ID                               │
-├─────────────────────────────────────────┤
-│ 2401.12345                              │
-│ topic:zzqxv-nonexistent-flibbertigibbet │
-│ topic:zzqxv-qwzxq-flibberzzq            │
-└─────────────────────────────────────────┘
-```
-
-`2401.12345` is listed as expected.
