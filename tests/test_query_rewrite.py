@@ -5,7 +5,7 @@ the query, which pulled a results table to the top of retrieval and produced a w
 """
 
 from agent.nodes import qa as qa_module
-from agent.nodes.qa import MAX_REWRITE_WORDS, _rewrite_query
+from agent.nodes.qa import _rewrite_query
 from agent.services.prompts import SYSTEM_QUERY_REWRITE, query_rewrite_prompt
 
 QUESTION = "Which of them suppresses outliers best?"
@@ -35,12 +35,12 @@ def test_short_rewrite_is_used(monkeypatch):
 
 
 def test_overlong_rewrite_falls_back_to_the_original_question(monkeypatch):
-    _stub_rewrite(monkeypatch, " ".join(["beamformer"] * (MAX_REWRITE_WORDS + 1)))
+    _stub_rewrite(monkeypatch, " ".join(["beamformer"] * 31))
     assert _rewrite_query(QUESTION, HISTORY) == QUESTION
 
 
 def test_rewrite_at_the_limit_is_kept(monkeypatch):
-    text = " ".join(["word"] * MAX_REWRITE_WORDS)
+    text = " ".join(["word"] * 30)
     _stub_rewrite(monkeypatch, text)
     assert _rewrite_query(QUESTION, HISTORY) == text
 
