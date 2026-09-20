@@ -151,21 +151,35 @@ def qa_node(state: AgentState) -> dict[str, Any]:
         return {"errors": [error]}
 
 
+# A rewrite longer than this is treated as list-stuffing: the model copied names from the
+# history into the query, which dragged retrieval toward a chunk that mentions them all.
+MAX_REWRITE_WORDS = 30
+
+
 def _rewrite_query(question: str, messages: list[dict]) -> str:
-    """Rewrite query to resolve pronouns using last 2 turns of history."""
+    """Rewrite query to resolve pronouns using the last 2 turns of history.
+
+    Falls back to the original question if the rewrite fails, is empty, or is
+    longer than MAX_REWRITE_WORDS.
+    """
     if len(messages) == 0 or not _needs_rewrite(question):
-        return question 
+        return question
 
     try:
         history = messages[-4:]  # last 2 user-assistant pairs (4 messages max)
         prompt = query_rewrite_prompt(question, history)
-        rewritten = complete_text(SYSTEM_QUERY_REWRITE, prompt)
-        rewritten = rewritten.strip()
-        logger.info(f"Rewrote query: {question!r} -> {rewritten!r}")
-        return rewritten
+        rewritten = complete_text(SYSTEM_QUERY_REWRITE, prompt).strip()
     except Exception as e:
         logger.warning(f"Query rewrite failed: {e}, using original question")
         return question
+
+    n_words = len(rewritten.split())
+    if n_words == 0 or n_words > MAX_REWRITE_WORDS:
+        logger.warning(f"Query rewrite unusable ({n_words} words), using original question")
+        return question
+
+    logger.info(f"Rewrote query: {question!r} -> {rewritten!r}")
+    return rewritten
 
 
 def _mmr_rerank(chunks: list[dict], query: str, lambda_mult: float = 0.6, top_k: int = 6) -> list[dict]:

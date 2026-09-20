@@ -61,8 +61,9 @@ Rules for citations:
 SYSTEM_QUERY_REWRITE = """Rewrite the user's question to be self-contained by resolving pronouns and references using the conversation history.
 
 Rules:
-- Replace "it", "this", "that", "they", "the method", etc. with specific terms from context
-- Keep the core question intent
+- Replace pronouns and references ("it", "this", "that", "they", "them", "the method") with a SHORT noun phrase for the topic, e.g. "the compared methods" or "the proposed approach"
+- Do NOT copy lists, names or numbers from the history into the question; refer to a list by its category instead
+- Keep the core question intent, in under 25 words
 - Output only the rewritten question as a plain string"""
 
 SYSTEM_QUERY_NORMALIZE = """Normalize the user's topic into an arXiv-friendly search query.
@@ -167,10 +168,15 @@ Context blocks:
 Answer from context only. Return JSON."""
 
 
+def _clip(text: str, limit: int = 300) -> str:
+    """Shorten long history messages so the rewriter is not tempted to copy their lists."""
+    return text if len(text) <= limit else text[:limit].rstrip() + "..."
+
+
 def query_rewrite_prompt(question: str, history: list[dict]) -> str:
     history_str = ""
     for msg in history[-2:]:
-        history_str += f"{msg.get('role', 'user')}: {msg.get('content', '')}\n"
+        history_str += f"{msg.get('role', 'user')}: {_clip(msg.get('content', ''))}\n"
 
     return f"""Conversation history:
 {history_str}
