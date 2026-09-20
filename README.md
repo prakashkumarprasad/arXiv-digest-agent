@@ -74,7 +74,7 @@ make install            # Windows without make: python make.py install
 cp .env.example .env    # then edit .env, see "LLM provider" below
 ```
 
-Without `make`, `pip install -e .` does the same thing.
+Without `make`, run `pip install -e ".[dev]"`. The first run downloads the embedding model (roughly 130 MB) from Hugging Face, so it needs internet access.
 
 ### LLM provider
 

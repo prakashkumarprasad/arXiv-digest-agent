@@ -13,7 +13,7 @@ help:
 
 # Install dependencies
 install:
-	pip install -e ".[groq,gemini]"
+	pip install -e ".[dev]"
 
 # Install without optional deps
 install-minimal:
