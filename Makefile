@@ -21,11 +21,11 @@ install-minimal:
 
 # Run tests
 test:
-	pytest
+	python -m pytest
 
 # Run with coverage
 test-cov:
-	pytest --cov=agent --cov-report=term-missing
+	python -m pytest --cov=agent --cov-report=term-missing
 
 # Lint
 lint:
@@ -35,9 +35,12 @@ lint:
 format:
 	ruff format src tests
 
-# Run demo (topic search)
+# Run demo: digest 2401.12345, then in-paper ask, then off-topic ask
+# Uses LLM_PROVIDER from the environment
 demo:
-	python -m agent.cli digest "recent work on KV-cache compression for LLMs" --provider ollama
+	python -m agent.cli digest 2401.12345 --auto --no-qa --json-out .data/briefing_check.json
+	python -m agent.cli ask 2401.12345 "What datasets did they evaluate on?" --verbose
+	python -m agent.cli ask 2401.12345 "What does this paper say about the 2026 World Cup?" --verbose
 
 # Run demo with specific paper (auto mode, no QA)
 demo-paper:

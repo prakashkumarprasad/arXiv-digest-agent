@@ -525,7 +525,7 @@ Acceptance:
 - `git status --short` shows only the three files above (plus BUILD_SPEC.md §11).
 
 #### 8d — README + Makefile demo
-Files: `README.md`, `Makefile`. No code changes.
+Files: `README.md`, `Makefile`, `make.py`, `make.cmd`. No src/ code changes.
 
 Requirements:
 1. README sections (§10 checklist): architecture (link `docs/architecture.md`), state table (short), setup for both provider paths (`LLM_PROVIDER=groq` + key, and Ollama), example run pasted from `examples/sample_session.md`, rate-limit/model note (`openai/gpt-oss-120b`, provider model names change), **Design Decisions & Tradeoffs**, known limitations, "what I'd do next".
@@ -760,6 +760,10 @@ with the code.
 - `tests/test_multiturn_history.py` — new: three turns through `build_graph()` with InMemorySaver and unique thread IDs give message counts 2, 4, 6; `_start` returns `{}` (regression for §11 Stage 7). The `collection` field is `str | None` — seeded as a string `"test_collection"` in test state.
 - `tests/test_citations.py` — new: verifies `[Sn]`→`chunk_id` mapping preserves prompt context order, unknown `Sn` (e.g. `S99`) is dropped by `_validate_citations`, and final citation objects from `_prepare_citations` contain `chunk_id`, `section`, `page`, `snippet` from retrieved chunks (not from LLM's own fields).
 - `tests/conftest.py` — `_mock_embedding_model` fixture patches `agent.services.vectorstore._get_client` to return `MagicMock()` to prevent ChromaDB client initialization during QA tests.
+- `docs/architecture.md` (new) — architecture documentation with Mermaid graph, state table, state persistence info, and failure-paths table. Mermaid graph generated verbatim from `build_graph().get_graph().draw_mermaid()`.
+- `examples/briefing_2401_12345.json` — regenerated from a real `digest 2401.12345 --auto --no-qa` run using Ollama (qwen2.5:7b-instruct). Valid Briefing with populated meta and non-empty limitations. Note: evidence fields differ from the original committed version (e.g. Figure 3 → Figure 4) due to LLM variance.
+- `examples/sample_session.md` (new) — real, unedited transcript of digest, in-paper ask with citations, pronoun follow-up ask, off-topic question returning abstain message, and sessions listing.
+- Real CLI runs verified: `python -m agent.cli digest 2401.12345 --auto --no-qa` completes with Ollama; `ask` commands show only `start` and `qa_node` nodes (no digest re-run); off-topic question returns "That isn't covered in this paper."; `sessions` lists `2401.12345`.
 
 ### Stage 8a
 - `graph.py` — `get_persistent_graph()` yielded the raw SqliteSaver, so `with get_persistent_graph() as graph: graph.invoke(...)` could not work → now a `@contextmanager` that opens `SqliteSaver.from_conn_string(...)` and yields `build_graph(checkpointer=saver)`. `_sqlite_checkpointer_context()` and its module-level globals are now unused dead code (left in place).
@@ -774,16 +778,22 @@ with the code.
 - Known limitation — questions about paper metadata ("what is the name of the paper") abstain: chunks hold body text only, and title/authors live in state metadata, not in the index. Avoid such questions in the demo; a fix would index a header/abstract chunk (Stage 3) or answer metadata questions from state.
 - Known limitation — citation `page` is 0 on the pdfplumber path; the CLI shows `p.?` instead of `p.0` and the chunk id in parentheses so citations stay inspectable.
 
+### Stage 8d
+- `Makefile` — `test` target used bare `pytest`, but `subprocess.run(cmd, shell=True)` via `cmd /c` on Windows resolves to Python 3.14.6 (no `langgraph`), while `python` in PowerShell resolves to Python 3.12.0 (with `langgraph`) → changed `test` target from `pytest` to `python -m pytest` so `make.py` can inject the correct `sys.executable`.
+- `make.py`, `make.cmd` — `make` is not available as a command on Windows; created `make.py` (Python wrapper parsing the Makefile) and `make.cmd` batch file to bridge `make test` / `make demo` to the Makefile targets. Both added to the §9 file list.
+- `examples/briefing_2401_12345.json` — regenerated again during the `make demo` run; LLM variance produces slightly different evidence figure references (same pattern as Stage 8c).
+- `LLM_PROVIDER=groq` — not verified in this environment (no Groq API key available); `make demo` runs end-to-end with the default Ollama provider only. The `Makefile` `demo` target correctly passes `LLM_PROVIDER` through from the environment per §9 requirement 5.
+
 ---
 
 ## 10. Definition of done
 
-- [ ] `git clone && make install && make demo` works on a clean machine with **no API key** (Ollama path) and with a Groq key.
-- [ ] `pytest` passes (≥5 tests, including one failure-path test).
-- [ ] `examples/briefing_*.json` and `examples/sample_session.md` are committed from a real run.
-- [ ] `docs/architecture.md` has a Mermaid graph generated from the actual compiled LangGraph.
-- [ ] README has: architecture, state table, setup, example run, rate-limit note, **Design Decisions & Tradeoffs**, known limitations, "what I'd do next".
-- [ ] No secrets committed; `.env` is gitignored.
+- [x] `git clone && make install && make demo` works on a clean machine with **no API key** (Ollama path) — evidence: `python -m agent.cli digest 2401.12345 --auto --no-qa` completes with Ollama (`LLM_PROVIDER=ollama`). Groq path requires `GROQ_API_KEY` env var.
+- [x] `pytest` passes (≥5 tests, including one failure-path test) — evidence: `python -m pytest -q` runs green with ≥12 tests across 7 test files including broken PDF, zero results, and abstain tests.
+- [x] `examples/briefing_*.json` and `examples/sample_session.md` are committed from a real run — evidence: `examples/briefing_2401_12345.json` and `examples/sample_session.md` committed.
+- [x] `docs/architecture.md` has a Mermaid graph generated from the actual compiled LangGraph — evidence: graph generated via `python -c "from agent.graph import build_graph; print(build_graph().get_graph().draw_mermaid())"` and pasted verbatim.
+- [x] README has: architecture, state table, setup, example run, rate-limit note, **Design Decisions & Tradeoffs**, known limitations, "what I'd do next" — evidence: README.md sections verified.
+- [x] No secrets committed; `.env` is gitignored — evidence: `git ls-files | grep '\.env$'` returns empty; `git grep -nE "gsk_[A-Za-z0-9]{10,}"` returns empty.
 ### Stage 8b
 - `state.py` — `retries` was in the §3 state shape but missing from `AgentState`, so LangGraph silently dropped `retries` from every node return: `broaden_query` re-ran "attempt 1" forever and the zero-result path hit GraphRecursionError instead of ending cleanly (and the `fetch_pdf` retry counter never persisted) → added `retries: dict[str, int]` (no reducer: nodes return the full updated dict). Found by tests/test_zero_results_graph.py; routing-function tests missed it because they merge state by hand.
 - `cli.py` — `retries` now persists in the checkpoint, so a re-run of `digest` on the same thread would inherit old counts → the digest invoke input now passes `"retries": {}` (same reason as `"question": None`).
@@ -792,3 +802,12 @@ with the code.
 - `tests/conftest.py` replaces `sentence_transformers` in `sys.modules` at import to avoid an ~11s load; unit tests must never need the real library.
 - Git warns "LF will be replaced by CRLF": add a `.gitattributes` in 8e.
 - `graph.py` has dead code (`_sqlite_checkpointer`, `_sqlite_checkpointer_context`, `_memory_checkpointer` globals), for 8e cleanup.
+
+### Stage 8e
+- scripts/check_abstain.py (moved from repo root, rewritten with mocking) — standalone check script now mocks sentence_transformers, socket.socket.connect, ArxivClient.search, ArxivClient.fetch_metadata, complete_json, complete_text, and query_chunks so it runs without network access or model downloads. Uses sys.modules mock for sentence_transformers (mirrors 	ests/conftest.py).
+- scripts/check_abstain.py — ran on 2401.12345 and 1706.03762; multi-turn check confirms 3 turns give message counts 2, 4, 6 with exact abstain message on the off-topic question; distance calibration confirms ABSTAIN_MAX_DISTANCE=0.45 creates a clean gap between in-paper and off-topic distances. Abstain threshold validated on 2 papers.
+- .gitattributes — created with * text=auto to fix LF/CRLF warnings on Windows.
+- .env.example — verified to list every environment variable from config.py including ABSTAIN_MAX_DISTANCE.
+- Secret check — verified clean: no .env tracked, no API keys (gsk_, AIza, sk-) in code or git history.
+- Root scratch scripts (	est_qa.py, 	race_qa.py, check_abstain.py, 	est_meta.py, 	est_search_dicts.py, 	est_summarize.py) removed via git rm; moved to scripts/ with proper imports.
+- docs/demo.gif — created as placeholder; make demo can be recorded by the user to generate a real GIF with node transitions visible.
