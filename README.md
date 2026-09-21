@@ -67,7 +67,7 @@ This is a simplified version of the graph generated from the compiled LangGraph;
 
 ## Setup
 
-Requires Python 3.12 (developed on Windows with Python 3.12).
+Requires Python 3.11+ (developed on Windows with Python 3.12).
 
 ```bash
 make install            # Windows without make: python make.py install
@@ -298,11 +298,12 @@ Zero results, irrelevant matches, parse degradation, the abstain gate, citation 
 - **Local embeddings** (`BAAI/bge-small-en-v1.5` via sentence-transformers): no API key, fast on CPU, 384 dimensions.
 - **PDF fallback chain.** PyMuPDF first, then pdfplumber. Repeated blocks that two-column LaTeX layouts produce are removed before chunking, because they otherwise degrade retrieval quality without any visible error.
 - **State rules that came from real bugs.** Only `messages`, `errors` and `warnings` use `operator.add`; every other field is replaced by its last writer. Two consequences: a pass-through node must return `{}` and never echo the state (echoing it re-appended the message history on every turn), and any key a node returns must be declared in `AgentState`, because LangGraph silently drops undeclared keys (this is how `retries` was lost and the zero-result loop never ended).
-- **Tests are checked by breaking the code.** I reintroduced thirteen bugs one at a time (the start-node echo, history spread on two return paths, a disabled abstain gate, a reversed `[Sn]` map, mis-wired graph edges, broken rate-limit waiting, a disabled relevance floor, an undeclared state key) and confirmed a specific test failed each time. The graph-level zero-result test found the real `retries` bug. Two other bugs, in query broadening, only showed up in real runs against arXiv and now have unit tests.
+- **Tests are checked by breaking the code.** I reintroduced several bugs one at a time (the start-node echo, history spread on two return paths, a disabled abstain gate, a reversed `[Sn]` map, mis-wired graph edges, broken rate-limit waiting, a disabled relevance floor, an undeclared state key) and confirmed a specific test failed each time. The graph-level zero-result test found the real `retries` bug. Two other bugs, in query broadening, only showed up in real runs against arXiv and now have unit tests.
 - **Gemini left unverified.** Groq and Ollama already meet the no-paid-key constraint, and the Gemini path uses a deprecated SDK, so I documented it as unverified rather than claiming it works.
 
 ## Known limitations
 
+- **AI assistance.** I built this with free AI coding agents, working from a written spec (`BUILD_SPEC.md`) and a fix log. Those agents sometimes edited files outside the task or reported success without running anything, so I checked the work myself with real CLI runs, a fresh-clone install, and tests that I confirmed fail when the bug they guard against is reintroduced.
 - Citation `section` labels can be wrong, and `page` is 0 on the pdfplumber path.
 - Briefing `evidence` figure and table references vary between LLM runs, and the synthesis step can attach a number to the wrong method (in one captured run a Wiener-DL versus Wiener comparison was attributed to Kernel-DL). Check figures against the paper.
 - Answers stay within the retrieved text but can state a claim more strongly than the paper does.
