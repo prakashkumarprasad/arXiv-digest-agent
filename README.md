@@ -1,3 +1,5 @@
+Video Walkthrough Link : https://drive.google.com/file/d/1FcK_TyGKky6idIiVlnEIIjeouwPKbMOJ/view?usp=drive_link
+
 # arXiv Digest Agent
 
 An agent that takes a research topic or an arXiv ID/URL, fetches and parses the paper, writes a structured executive briefing, and then answers follow-up questions about the paper. Answers are grounded in retrieved chunks and carry citations; if the paper doesn't cover the question, the agent says so instead of guessing.
